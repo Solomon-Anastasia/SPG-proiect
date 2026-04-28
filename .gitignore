@@ -1,0 +1,8 @@
+# Visual Studio temporary files
+.vs/
+# Build outputs
+bin/
+obj/
+*.exe
+*.pdb
+*.user

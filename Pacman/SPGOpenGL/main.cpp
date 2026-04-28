@@ -1,0 +1,565 @@
+﻿#include <iostream>
+#include <fstream>
+#include <string>
+#include <vector>
+#include <stdio.h>
+#include <GL/glew.h>
+#include <GL/freeglut.h>
+#include <glm/mat4x4.hpp>
+#include <glm/gtx/transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/constants.hpp>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+#include "spheremesh.h"
+#include "cubeMesh.h"
+
+#define PI glm::pi<float>()
+
+GLuint shader_programme, vao;
+glm::mat4 projectionMatrix, viewMatrix, modelMatrix;
+
+glm::vec3 lightPos(10.0f, 8.0f, 7.0f); // Pozitia sursei de lumina
+glm::vec3 viewPos(5.0f, 18.0f, 12.0f); // Pozitia initiala a camerei
+
+SphereMesh sphere(1);
+GLuint sphereVao, sphereVbo, sphereEbo;
+int sphereElementCount = (GLsizei)sphere.triangles.size() * sizeof(glm::ivec3);
+
+CubeMesh wallCube;
+GLuint cubeVao, cubeVbo, cubeEbo;
+
+// Fiecare cub are 12 triunghiuri, deci 36 indici
+int cubeElementCount = (GLsizei)wallCube.triangles.size() * 3;
+
+GLuint brickTexture;
+
+// 1 = perete, 0 = cale
+const int MAZE_WIDTH = 20;
+const int MAZE_HEIGHT = 15;
+int maze[MAZE_HEIGHT][MAZE_WIDTH] = {
+    {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+    {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+    {1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1},
+    {1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1},
+    {1, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 0, 1},
+    {1, 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 1},
+    {1, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1},
+	{0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0}, // Tunel
+    {1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1},
+    {1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1},
+    {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+    {1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1},
+    {1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+    {1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1},
+    {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
+};
+
+// Structura pentru a stoca segmentele de pereti generate prin greedy meshing
+struct WallSegment {
+    float x, z;
+    float width, depth;
+};
+
+std::vector<WallSegment> wallSegments;
+
+// Construire segmente de pereti
+// Greedy meshing
+void buildWallSegments()
+{
+    wallSegments.clear();
+    bool visited[MAZE_HEIGHT][MAZE_WIDTH] = { false };
+
+    for (int r = 0; r < MAZE_HEIGHT; r++) 
+    {
+        for (int c = 0; c < MAZE_WIDTH; c++) 
+        {
+			// Cautam un perete neprocesat
+            if (maze[r][c] == 1 && !visited[r][c]) 
+            {
+                int w = 0;
+				// Ne intindem pe orizontala cat putem
+                while (c + w < MAZE_WIDTH && maze[r][c + w] == 1 && !visited[r][c + w]) 
+                {
+                    w++;
+                }
+
+                int d = 0;
+				// Daca nu merge pe orizontala, incercam pe verticala
+                if (w == 1) 
+                {
+                    while (r + d < MAZE_HEIGHT && maze[r + d][c] == 1 && !visited[r + d][c]) 
+                    {
+                        d++;
+                    }
+                }
+                else {
+                    d = 1;
+                }
+
+				// Marcam segmentul ca vizitat
+                for (int i = 0; i < d; i++) 
+                {
+                    for (int j = 0; j < w; j++) 
+                    {
+                        visited[r + i][c + j] = true;
+                    }
+                }
+
+                WallSegment seg;
+
+                seg.x = (float)c;
+                seg.z = (float)r;
+
+                seg.width = (float)w;
+                seg.depth = (float)d;
+
+                wallSegments.push_back(seg);
+            }
+        }
+    }
+}
+
+// Logica pentru lerping pentru pacman si camera
+float pacX = 1.0f, pacZ = 1.0f;
+float targetX = 1.0f, targetZ = 1.0f;
+float smoothSpeed = 0.01f;
+
+float currentAngle = 0.0f, targetAngle = 0.0f;
+float rotationSpeed = 0.01f;
+
+float cameraAngle = 0.0f, cameraTarget = 0.0f;
+float cameraLagSpeed = 0.01f;
+
+// Pentru controlul camerei cu mouse-ul
+int lastMouseX = -1;
+float cameraOrbit = 0.0f;
+bool mouseDown = false;
+
+void mouse(int button, int state, int x, int y) 
+{
+    if (button == GLUT_LEFT_BUTTON) 
+    {
+        mouseDown = (state == GLUT_DOWN);
+        lastMouseX = x;
+    }
+}
+
+void motion(int x, int y) 
+{
+    if (mouseDown && lastMouseX >= 0) 
+    {
+        float delta = (x - lastMouseX) * 0.01f;
+        cameraOrbit += delta;
+        lastMouseX = x;
+    }
+}
+
+std::string textFileRead(char* fn) 
+{
+    std::ifstream ifile(fn);
+    std::string filetext;
+    while (ifile.good()) 
+    {
+        std::string line;
+        std::getline(ifile, line);
+        filetext.append(line + "\n");
+    }
+    return filetext;
+}
+
+GLuint wallBoxVao, wallBoxVbo;
+
+void buildWallBoxVao()
+{
+    glGenVertexArrays(1, &wallBoxVao);
+    glBindVertexArray(wallBoxVao);
+
+    glGenBuffers(1, &wallBoxVbo);
+    glBindBuffer(GL_ARRAY_BUFFER, wallBoxVbo);
+
+	// Avem 8 float pentru fiecare vertex: X,Y,Z (pozitie), NX,NY,NZ (Normal), U,V (Coordonate de textura)
+    // 36 vercices pentru un cub (6 fete * 2 triunghiuri/fata * 3 vertici/triunghi)
+    glBufferData(GL_ARRAY_BUFFER, 36 * 8 * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+
+    glBindVertexArray(0);
+}
+
+// Procedural mesh generation + texturarea
+void drawWallBox(float segW, float segD, float wallH)
+{
+	// Centram cubul in jurul originii pentru a putea aplica transformari de pozitie si scalare
+    float x0 = -segW / 2.0f, x1 = segW / 2.0f;
+    float z0 = -segD / 2.0f, z1 = segD / 2.0f;
+    float y0 = -wallH / 2.0f, y1 = wallH / 2.0f;
+
+	// Pentru a acoperi intreaga suprafata a peretelui cu textura, 
+    // folosim latimea si adancimea segmentului ca coordonate U, V
+    float uW = segW;
+    float uD = segD;
+    float vH = wallH;
+
+	// X, Y, Z, NX, NY, NZ, U, V
+	// Ordinea CCW pentru a avea normalele orientate corect
+    float verts[36 * 8] = {
+        // Fata
+        x0, y0, z1,   0, 0, 1,   0.0f, 0.0f,    x1, y0, z1,   0, 0, 1,   uW,   0.0f,    x1, y1, z1,   0, 0, 1,   uW,   vH,
+        x0, y0, z1,   0, 0, 1,   0.0f, 0.0f,    x1, y1, z1,   0, 0, 1,   uW,   vH,      x0, y1, z1,   0, 0, 1,   0.0f, vH,
+		// Spate
+        x1, y0, z0,   0, 0,-1,   0.0f, 0.0f,    x0, y0, z0,   0, 0,-1,   uW,   0.0f,    x0, y1, z0,   0, 0,-1,   uW,   vH,
+        x1, y0, z0,   0, 0,-1,   0.0f, 0.0f,    x0, y1, z0,   0, 0,-1,   uW,   vH,      x1, y1, z0,   0, 0,-1,   0.0f, vH,
+		// Stanga
+        x0, y0, z0,  -1, 0, 0,   0.0f, 0.0f,    x0, y0, z1,  -1, 0, 0,   uD,   0.0f,    x0, y1, z1,  -1, 0, 0,   uD,   vH,
+        x0, y0, z0,  -1, 0, 0,   0.0f, 0.0f,    x0, y1, z1,  -1, 0, 0,   uD,   vH,      x0, y1, z0,  -1, 0, 0,   0.0f, vH,
+		// Dreapta
+        x1, y0, z1,   1, 0, 0,   0.0f, 0.0f,    x1, y0, z0,   1, 0, 0,   uD,   0.0f,    x1, y1, z0,   1, 0, 0,   uD,   vH,
+        x1, y0, z1,   1, 0, 0,   0.0f, 0.0f,    x1, y1, z0,   1, 0, 0,   uD,   vH,      x1, y1, z1,   1, 0, 0,   0.0f, vH,
+		// Sus
+        x0, y1, z1,   0, 1, 0,   0.0f, uD,      x1, y1, z1,   0, 1, 0,   uW,   uD,      x1, y1, z0,   0, 1, 0,   uW,   0.0f,
+        x0, y1, z1,   0, 1, 0,   0.0f, uD,      x1, y1, z0,   0, 1, 0,   uW,   0.0f,    x0, y1, z0,   0, 1, 0,   0.0f, 0.0f,
+		// Jos
+        x0, y0, z0,   0,-1, 0,   0.0f, uD,      x1, y0, z0,   0,-1, 0,   uW,   uD,      x1, y0, z1,   0,-1, 0,   uW,   0.0f,
+        x0, y0, z0,   0,-1, 0,   0.0f, uD,      x1, y0, z1,   0,-1, 0,   uW,   0.0f,    x0, y0, z1,   0,-1, 0,   0.0f, 0.0f,
+    };
+
+    glBindVertexArray(wallBoxVao);
+    glBindBuffer(GL_ARRAY_BUFFER, wallBoxVbo);
+	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts); // Injectam datele in buffer
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+    glBindVertexArray(0);
+}
+
+void display()
+{
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glUseProgram(shader_programme);
+
+	// Logica pentru lerping pentru miscarea lui Pacman
+    pacX += (targetX - pacX) * smoothSpeed;
+    pacZ += (targetZ - pacZ) * smoothSpeed;
+
+	// Logica teleportarii: daca Pacman depaseste marginile labirintului, il aducem pe partea cealalta
+    if (pacX < -0.5f)
+    {
+        pacX += MAZE_WIDTH;
+        targetX += MAZE_WIDTH;
+    }
+    else if (pacX > MAZE_WIDTH - 0.5f) 
+    {
+        pacX -= MAZE_WIDTH;
+        targetX -= MAZE_WIDTH;
+    }
+
+	// Logica pentru rotirea lui pacman + camera in directia miscarii
+    // 1D Shortest-Path Lerp
+    float angleDiff = targetAngle - currentAngle;
+    while (angleDiff > PI) angleDiff -= 2.0f * PI;
+    while (angleDiff < -PI) angleDiff += 2.0f * PI;
+    currentAngle += angleDiff * rotationSpeed;
+
+    float camDiff = cameraTarget - cameraAngle;
+    while (camDiff > PI) camDiff -= 2.0f * PI;
+    while (camDiff < -PI) camDiff += 2.0f * PI;
+    cameraAngle += camDiff * cameraLagSpeed;
+
+    // Camera in spatele lui pacman
+    float distanceBehind = 5.0f;
+    float heightAbove = 3.5f;
+    float finalCamAngle = cameraAngle + cameraOrbit;
+
+	// Calculam pozitia camerei folosind un offset polar fata de pozitia lui pacman
+    float camX = pacX + sin(finalCamAngle) * distanceBehind;
+    float camZ = pacZ + cos(finalCamAngle) * distanceBehind;
+    viewPos = glm::vec3(camX, heightAbove, camZ);
+    viewMatrix = glm::lookAt(viewPos, glm::vec3(pacX, 0.3f, pacZ), glm::vec3(0, 1, 0));
+
+    GLint colorLoc = glGetUniformLocation(shader_programme, "objectColor");
+    GLint useLightLoc = glGetUniformLocation(shader_programme, "useLighting");
+    GLint useTextureLoc = glGetUniformLocation(shader_programme, "useTexture");
+    GLuint lightPosLoc = glGetUniformLocation(shader_programme, "lightPos");
+    GLuint viewPosLoc = glGetUniformLocation(shader_programme, "viewPos");
+    GLuint modelMatrixLoc = glGetUniformLocation(shader_programme, "mvpMatrix");
+    GLuint normalMatrixLoc = glGetUniformLocation(shader_programme, "normalMatrix");
+    GLuint rawModelLoc = glGetUniformLocation(shader_programme, "modelMatrix");
+    GLint textureLoc = glGetUniformLocation(shader_programme, "wallTexture");
+
+    glUniform3fv(lightPosLoc, 1, glm::value_ptr(lightPos));
+    glUniform3fv(viewPosLoc, 1, glm::value_ptr(viewPos));
+
+	// Peretii texturati
+    glUniform1i(useLightLoc, 1);
+    glUniform1i(useTextureLoc, 1);
+    
+    // ------
+    //glUniform1i(useTextureLoc, 0);
+    //glUniform3f(colorLoc, 0.1f, 0.3f, 1.0f);
+    //glUniform1i(useLightLoc, 0);
+    //// ---
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, brickTexture);
+    glUniform1i(textureLoc, 0);
+
+    float wallHeight = 0.4f;
+
+    for (const WallSegment& seg : wallSegments)
+    {
+		// Cautam centrul exact al segmentului pentru a-l pozitiona corect, 
+        // deoarece drawWallBox este centrat in jurul originii
+        float centerX = seg.x + (seg.width - 1.0f) / 2.0f;
+        float centerZ = seg.z + (seg.depth - 1.0f) / 2.0f;
+
+        modelMatrix = glm::translate(glm::vec3(centerX, wallHeight / 2.0f - 0.5f, centerZ));
+
+        glUniformMatrix4fv(modelMatrixLoc, 1, GL_FALSE, glm::value_ptr(projectionMatrix * viewMatrix * modelMatrix));
+        glUniformMatrix4fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(glm::transpose(glm::inverse(modelMatrix))));
+        glUniformMatrix4fv(rawModelLoc, 1, GL_FALSE, glm::value_ptr(modelMatrix));
+
+        drawWallBox(seg.width, seg.depth, wallHeight);
+    }
+
+	// Podeaua (fara textura)
+    glUniform1i(useTextureLoc, 0);
+    glUniform3f(colorLoc, 0.08f, 0.08f, 0.18f);
+
+    glBindVertexArray(cubeVao);
+
+	// Calculam centrul exact al podelei pentru a o pozitiona corect, 
+    // deoarece drawWallBox este centrat in jurul originii
+    float floorCenterX = (MAZE_WIDTH - 1) / 2.0f;
+    float floorCenterZ = (MAZE_HEIGHT - 1) / 2.0f;
+
+    // Mutam podeaua in centru hartii + scalam pentru a acoperi suprafata labiritnului
+    modelMatrix = glm::translate(glm::vec3(floorCenterX, -0.5f, floorCenterZ));
+    modelMatrix = glm::scale(modelMatrix, glm::vec3((float)MAZE_WIDTH, 0.08f, (float)MAZE_HEIGHT));
+
+    glUniformMatrix4fv(modelMatrixLoc, 1, GL_FALSE, glm::value_ptr(projectionMatrix * viewMatrix * modelMatrix));
+    glUniformMatrix4fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(glm::transpose(glm::inverse(modelMatrix))));
+    glUniformMatrix4fv(rawModelLoc, 1, GL_FALSE, glm::value_ptr(modelMatrix));
+
+    glDrawElements(GL_TRIANGLES, cubeElementCount, GL_UNSIGNED_INT, NULL);
+
+	// Pacman (fara textura)
+    glUniform1i(useLightLoc, 1);
+    glUniform1i(useTextureLoc, 0);
+    glUniform3f(colorLoc, 1.0f, 0.9f, 0.0f);
+
+    glBindVertexArray(sphereVao);
+    modelMatrix = glm::translate(glm::vec3(pacX, 0.0f, pacZ));
+    modelMatrix = glm::rotate(modelMatrix, currentAngle, glm::vec3(0, 1, 0));
+    modelMatrix = glm::scale(modelMatrix, glm::vec3(0.35f, 0.35f, 0.35f));
+
+    glUniformMatrix4fv(modelMatrixLoc, 1, GL_FALSE, glm::value_ptr(projectionMatrix * viewMatrix * modelMatrix));
+    glUniformMatrix4fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(glm::transpose(glm::inverse(modelMatrix))));
+    glUniformMatrix4fv(rawModelLoc, 1, GL_FALSE, glm::value_ptr(modelMatrix));
+    glDrawElements(GL_TRIANGLES, sphereElementCount, GL_UNSIGNED_INT, NULL);
+
+    glFlush();
+    glutPostRedisplay();
+}
+
+void loadBrickTexture()
+{
+    glGenTextures(1, &brickTexture);
+    glBindTexture(GL_TEXTURE_2D, brickTexture);
+
+    stbi_set_flip_vertically_on_load(true);
+
+    int width, height, nrChannels;
+    unsigned char* data = stbi_load("Plastic008_1K-PNG_Color.png", &width, &height, &nrChannels, 0);
+
+    if (data) {
+        GLenum format = (nrChannels == 4) ? GL_RGBA : GL_RGB;
+        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+
+        glGenerateMipmap(GL_TEXTURE_2D);
+        printf("Brick texture loaded: %dx%d, %d channels\n", width, height, nrChannels);
+    }
+    else {
+        printf("ERROR: Failed to load texture!\n");
+    }
+
+    stbi_image_free(data);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+}
+
+void init()
+{
+    glClearColor(0.0f, 0.0f, 0.05f, 1.0f);
+    glEnable(GL_DEPTH_TEST);
+    glewInit();
+
+    loadBrickTexture();
+
+	// Construim segmente de pereti pentru a reduce numarul de draw call-uri necesare la desenarea labirintului
+    buildWallSegments();
+    printf("Wall draw calls dramatically reduced from %d worst case to %d total\n", 
+        MAZE_HEIGHT * MAZE_WIDTH, (int)wallSegments.size());
+
+    glGenBuffers(1, &sphereVbo);
+    glBindBuffer(GL_ARRAY_BUFFER, sphereVbo);
+    glBufferData(GL_ARRAY_BUFFER, sphere.vertices.size() * sizeof(glm::vec3), sphere.vertices.data(), GL_STATIC_DRAW);
+
+    glGenVertexArrays(1, &sphereVao);
+    glBindVertexArray(sphereVao);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, NULL);
+
+    glGenBuffers(1, &sphereEbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sphereEbo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sphereElementCount, sphere.triangles.data(), GL_STATIC_DRAW);
+
+    glGenVertexArrays(1, &cubeVao);
+    glBindVertexArray(cubeVao);
+
+    glGenBuffers(1, &cubeVbo);
+    glBindBuffer(GL_ARRAY_BUFFER, cubeVbo);
+    glBufferData(GL_ARRAY_BUFFER, wallCube.vertices.size() * sizeof(glm::vec3), wallCube.vertices.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, NULL);
+
+    glGenBuffers(1, &cubeEbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, cubeEbo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, wallCube.triangles.size() * sizeof(glm::ivec3), wallCube.triangles.data(), GL_STATIC_DRAW);
+    glBindVertexArray(0);
+
+    // Construim VAO pentru cutiile de perete
+    buildWallBoxVao();
+
+    std::string vstext = textFileRead("pixel_light.vert");
+    std::string fstext = textFileRead("pixel_light.frag");
+    const char* vertex_shader = vstext.c_str();
+    const char* fragment_shader = fstext.c_str();
+
+    GLuint vs = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vs, 1, &vertex_shader, NULL);
+    glCompileShader(vs);
+
+    GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fs, 1, &fragment_shader, NULL);
+    glCompileShader(fs);
+
+    shader_programme = glCreateProgram();
+    glAttachShader(shader_programme, fs);
+    glAttachShader(shader_programme, vs);
+    glLinkProgram(shader_programme);
+}
+
+void reshape(int w, int h) 
+{
+    glViewport(0, 0, w, h);
+    projectionMatrix = glm::perspective(PI / 4, (float)w / h, 0.1f, 100.0f);
+}
+
+void keyboard(unsigned char key, int x, int y) {
+    float nextX = targetX;
+    float nextZ = targetZ;
+
+    switch (key) {
+		// Pentru a si d nu se misca lateral, ci sa se intoarca la 90 de grade stanga/dreapta,
+        // nu este nevoie de determinarea coliziunii
+        case 'a': 
+            targetAngle += PI / 2.0f;
+            cameraTarget = targetAngle + PI; 
+            glutPostRedisplay(); 
+            return;
+        case 'd': 
+            targetAngle -= PI / 2.0f; 
+            cameraTarget = targetAngle + PI;
+            glutPostRedisplay(); 
+            return;
+        case 'w': 
+            nextX += sin(targetAngle);
+            nextZ += cos(targetAngle); 
+            break;
+        case 's': 
+            nextX -= sin(targetAngle);
+            nextZ -= cos(targetAngle); 
+            break;
+        case 27: 
+            exit(0); // ESC key
+    }
+
+    int gridX = (int)(nextX + 0.5f);
+    int gridZ = (int)(nextZ + 0.5f);
+
+	// Logica de teleportare: daca Pacman incearca sa iasa pe latura stanga sau dreapta 
+    // a labirintului prin tunel, il aducem pe partea cealalta
+    if (gridZ == 7 && (gridX < 0 || gridX >= MAZE_WIDTH)) 
+    {
+        targetX = nextX;
+        targetZ = nextZ;
+    }
+	// Daca nu e tunel, verificam coliziunea normala cu peretii
+    else if (gridX >= 0 && gridX < MAZE_WIDTH && gridZ >= 0 && gridZ < MAZE_HEIGHT) 
+    {
+        if (maze[gridZ][gridX] != 1) 
+        {
+            targetX = nextX;
+            targetZ = nextZ;
+        }
+    }
+
+    glutPostRedisplay();
+}
+
+void specialKeyboard(int key, int x, int y) 
+{
+    unsigned char mapped = 0;
+    switch (key) {
+        case GLUT_KEY_UP:    
+            mapped = 'w'; 
+            break;
+        case GLUT_KEY_DOWN:  
+            mapped = 's'; 
+            break;
+        case GLUT_KEY_LEFT:  
+            mapped = 'a'; 
+            break;
+        case GLUT_KEY_RIGHT: 
+            mapped = 'd';
+            break;
+    }
+
+    if (mapped)
+    {
+        keyboard(mapped, x, y);
+    }
+}
+
+int main(int argc, char** argv) 
+{
+    glutInit(&argc, argv);
+    glutInitDisplayMode(GLUT_RGB | GLUT_DEPTH | GLUT_SINGLE);
+    glutInitWindowPosition(200, 200);
+    glutInitWindowSize(1000, 800);
+    glutCreateWindow("Pac-Man");
+
+    init();
+
+    glutDisplayFunc(display);
+    glutReshapeFunc(reshape);
+    glutKeyboardFunc(keyboard);
+    glutSpecialFunc(specialKeyboard);
+    glutMouseFunc(mouse);
+    glutMotionFunc(motion);
+
+    glutMainLoop();
+    return 0;
+}

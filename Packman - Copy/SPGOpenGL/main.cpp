@@ -27,7 +27,7 @@ int sphereElementCount = (GLsizei)sphere.triangles.size() * sizeof(glm::ivec3);
 
 CubeMesh wallCube;
 GLuint cubeVao, cubeVbo, cubeEbo;
-int cubeElementCount = (GLsizei)wallCube.triangles.size() * 3;
+int cubeElementCount = (GLsizei)wallCube.triangles.size() * 3; // 3 indices per triangle
 
 // 1 = Wall, 0 = Path, 2 = Pellet
 const int MAZE_WIDTH = 20;
