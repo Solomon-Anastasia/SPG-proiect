@@ -118,6 +118,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="objloader.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="pixel_light.frag" />

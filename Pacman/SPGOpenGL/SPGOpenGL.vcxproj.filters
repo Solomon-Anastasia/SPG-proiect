@@ -12,6 +12,7 @@
     <ClCompile Include="main.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="objloader.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="pixel_light.frag">

@@ -10,8 +10,12 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/constants.hpp>
 
+#include <queue>
+#include <cmath>
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+#include "objloader.hpp"
 
 #include "spheremesh.h"
 #include "cubeMesh.h"
@@ -123,20 +127,154 @@ void buildWallSegments()
 }
 
 // Logica pentru lerping pentru pacman si camera
-float pacX = 1.0f, pacZ = 1.0f;
-float targetX = 1.0f, targetZ = 1.0f;
+float pacX = 9.0f, pacZ = 10.0f;
+float targetX = 9.0f, targetZ = 10.0f;
 float smoothSpeed = 0.01f;
 
-float currentAngle = 0.0f, targetAngle = 0.0f;
+// Schimbam unghiul initial la PI ca sa priveasca in sus (spre un culoar liber)
+float currentAngle = PI, targetAngle = PI;
 float rotationSpeed = 0.01f;
 
-float cameraAngle = 0.0f, cameraTarget = 0.0f;
+float cameraAngle = PI, cameraTarget = PI;
 float cameraLagSpeed = 0.01f;
 
 // Pentru controlul camerei cu mouse-ul
 int lastMouseX = -1;
 float cameraOrbit = 0.0f;
 bool mouseDown = false;
+
+// Fantome
+std::vector<glm::vec3> ghostVertices;
+std::vector<glm::vec3> ghostNormals;
+std::vector<glm::vec2> ghostUVs;
+GLuint ghostVao, ghostVboPos, ghostVboNorm;
+
+struct Ghost {
+    float x, z;
+    float targetX, targetZ;
+    glm::vec3 color;
+    float speed = 0.01f;
+
+    int currentDir;
+    float targetAngle;
+    float currentAngle;
+
+    // Patrulare
+    std::vector<glm::ivec2> route;
+    int routeIndex = 0;
+};
+
+std::vector<Ghost> ghosts;
+
+void initGhosts() {
+    ghosts.clear();
+    glm::vec3 colors[] = {
+        glm::vec3(1.0f, 0.0f, 0.0f), // Blinky (Top-Left)
+        glm::vec3(1.0f, 0.7f, 0.8f), // Pinky (Top-Right)
+        glm::vec3(0.0f, 1.0f, 1.0f), // Inky (Bottom-Left)
+        glm::vec3(1.0f, 0.5f, 0.0f)  // Clyde (Bottom-Right)
+    };
+
+    // Orthogonal patrol routes
+    std::vector<std::vector<glm::ivec2>> routes = {
+        {{9, 1}, {9, 3}, {6, 3}, {6, 8}, {13, 8}, {13, 3}, {10, 3}, {10, 1}},
+        {{4, 1}, {4, 10}, {9, 10}, {9, 8}, {10, 8}, {10, 10}, {15, 10}, {15, 1}},
+        {{1, 10}, {1, 12}, {8, 12}, {8, 13}, {11, 13}, {11, 12}, {18, 12}, {18, 10}, {10, 10}, {10, 8}, {9, 8}, {9, 10}},
+        {{9, 5}, {8, 5}, {8, 6}, {11, 6}, {11, 5}, {10, 5}, {10, 10}, {18, 10}, {18, 1}, {10, 1}, {10, 3}, {9, 3}, {9, 1}, {1, 1}, {1, 10}, {9, 10}} 
+    };
+
+    for (int i = 0; i < 4; i++) {
+        Ghost g;
+        g.route = routes[i];
+        g.routeIndex = 0;
+
+        // Start directly at the first point of their specific route
+        g.x = g.targetX = (float)g.route[0].x;
+        g.z = g.targetZ = (float)g.route[0].y;
+
+        g.color = colors[i];
+
+        g.speed = 0.003f;
+
+        g.currentDir = 3;
+        g.targetAngle = 0.0f;
+        g.currentAngle = 0.0f;
+
+        ghosts.push_back(g);
+    }
+}
+
+void updateGhosts() {
+    for (auto& g : ghosts) {
+        // Calculate the distance and direction to the target
+        float dx = g.targetX - g.x;
+        float dz = g.targetZ - g.z;
+        float dist = std::sqrt(dx * dx + dz * dz);
+
+        // Move steadily at a CONSTANT speed, removing the jerky slow-down
+        if (dist > 0.001f) {
+            float step = g.speed;
+            if (step > dist) step = dist; // Prevent overshooting the target
+
+            g.x += (dx / dist) * step;
+            g.z += (dz / dist) * step;
+        }
+
+        // Smoothly rotate toward the target angle (softened to feel more like Pac-Man)
+        float angleDiff = g.targetAngle - g.currentAngle;
+        while (angleDiff > PI) angleDiff -= 2.0f * PI;
+        while (angleDiff < -PI) angleDiff += 2.0f * PI;
+        g.currentAngle += angleDiff * 0.05f; 
+
+        // Check if the ghost has reached its target waypoint
+        if (dist <= 0.01f) {
+            // Snap exactly to target to prevent drifting
+            g.x = g.targetX;
+            g.z = g.targetZ;
+
+            // Advance to the next waypoint in their route loop
+            g.routeIndex = (g.routeIndex + 1) % g.route.size();
+            glm::ivec2 nextStep = g.route[g.routeIndex];
+
+            g.targetX = (float)nextStep.x;
+            g.targetZ = (float)nextStep.y;
+
+            // Update rotation based on the physical direction they are turning
+            int roundedX = (int)(g.x + 0.5f);
+            int roundedZ = (int)(g.z + 0.5f);
+
+            if (nextStep.x > roundedX) 
+            {
+                g.targetAngle = 0.0f; // Face Right
+            }
+            else if (nextStep.x < roundedX) 
+            {
+                g.targetAngle = PI; // Face Left
+            }
+            else if (nextStep.y > roundedZ) 
+            {
+                g.targetAngle = -PI / 2.0f; // Face Down
+            }
+            else if (nextStep.y < roundedZ) 
+            {
+                g.targetAngle = PI / 2.0f; // Face Up
+            }
+        }
+    }
+}
+
+void checkGameOver() 
+{
+    for (auto& g : ghosts) 
+    {
+        float dist = glm::distance(glm::vec2(pacX, pacZ), glm::vec2(g.x, g.z));
+        if (dist < 0.4f) // Collision radius
+        { 
+            std::cout << "GAME OVER!" << std::endl;
+            //exit(0);
+        }
+    }
+}
 
 void mouse(int button, int state, int x, int y) 
 {
@@ -240,6 +378,27 @@ void drawWallBox(float segW, float segD, float wallH)
     glBindVertexArray(0);
 }
 
+bool pellets[MAZE_HEIGHT][MAZE_WIDTH];
+
+void initPellets() 
+{
+    for (int r = 0; r < MAZE_HEIGHT; r++) 
+    {
+        for (int c = 0; c < MAZE_WIDTH; c++) 
+        {
+            if (maze[r][c] == 0 && (rand() % 100 < 50)) 
+            {
+                pellets[r][c] = true;
+            }
+            else 
+            {
+                pellets[r][c] = false;
+            }
+        }
+    }
+    pellets[1][1] = false;
+}
+
 void display()
 {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -248,6 +407,19 @@ void display()
 	// Logica pentru lerping pentru miscarea lui Pacman
     pacX += (targetX - pacX) * smoothSpeed;
     pacZ += (targetZ - pacZ) * smoothSpeed;
+
+    // Consumare pellet
+    int currentGridX = (int)(pacX + 0.5f);
+    int currentGridZ = (int)(pacZ + 0.5f);
+
+    if (currentGridX >= 0 && currentGridX < MAZE_WIDTH &&
+        currentGridZ >= 0 && currentGridZ < MAZE_HEIGHT)
+    {
+        if (pellets[currentGridZ][currentGridX])
+        {
+            pellets[currentGridZ][currentGridX] = false;
+        }
+    }
 
 	// Logica teleportarii: daca Pacman depaseste marginile labirintului, il aducem pe partea cealalta
     if (pacX < -0.5f)
@@ -350,6 +522,61 @@ void display()
 
     glDrawElements(GL_TRIANGLES, cubeElementCount, GL_UNSIGNED_INT, NULL);
 
+	// Pellets (fara textura)
+    glUniform1i(useLightLoc, 1);
+    glUniform1i(useTextureLoc, 0);
+    glUniform3f(colorLoc, 1.0f, 0.72f, 0.67f);
+
+    glBindVertexArray(sphereVao);
+    for (int r = 0; r < MAZE_HEIGHT; r++) {
+        for (int c = 0; c < MAZE_WIDTH; c++) {
+            if (pellets[r][c]) {
+                modelMatrix = glm::translate(glm::vec3((float)c, -0.2f, (float)r));
+                modelMatrix = glm::scale(modelMatrix, glm::vec3(0.1f, 0.1f, 0.1f));
+
+                glUniformMatrix4fv(modelMatrixLoc, 1, GL_FALSE, glm::value_ptr(projectionMatrix * viewMatrix * modelMatrix));
+                glUniformMatrix4fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(glm::transpose(glm::inverse(modelMatrix))));
+                glUniformMatrix4fv(rawModelLoc, 1, GL_FALSE, glm::value_ptr(modelMatrix));
+
+                glDrawElements(GL_TRIANGLES, sphereElementCount, GL_UNSIGNED_INT, NULL);
+            }
+        }
+    }
+
+    // Fantome
+    glUniform1i(useLightLoc, 1);
+    glUniform1i(useTextureLoc, 0);
+
+    glBindVertexArray(ghostVao);
+
+    // Define colors for the 4 ghosts
+    glm::vec3 ghostColors[] = {
+        glm::vec3(1.0f, 0.0f, 0.0f), // Red (Blinky)
+        glm::vec3(1.0f, 0.7f, 0.8f), // Pink (Pinky)
+        glm::vec3(0.0f, 1.0f, 1.0f), // Cyan (Inky)
+        glm::vec3(1.0f, 0.5f, 0.0f)  // Orange (Clyde)
+    };
+
+    updateGhosts();   // Move them
+    checkGameOver();  // Check if they ate you
+
+    for (const auto& g : ghosts) {
+        glUniform3fv(colorLoc, 1, glm::value_ptr(g.color));
+
+        modelMatrix = glm::translate(glm::vec3(g.x, -0.2f, g.z));
+
+        // NEW: Rotate based on current moving direction
+        modelMatrix = glm::rotate(modelMatrix, g.currentAngle, glm::vec3(0, 1, 0));
+
+        modelMatrix = glm::scale(modelMatrix, glm::vec3(0.2f, 0.2f, 0.2f));
+
+        glUniformMatrix4fv(modelMatrixLoc, 1, GL_FALSE, glm::value_ptr(projectionMatrix * viewMatrix * modelMatrix));
+        glUniformMatrix4fv(normalMatrixLoc, 1, GL_FALSE, glm::value_ptr(glm::transpose(glm::inverse(modelMatrix))));
+        glUniformMatrix4fv(rawModelLoc, 1, GL_FALSE, glm::value_ptr(modelMatrix));
+
+        glDrawArrays(GL_TRIANGLES, 0, ghostVertices.size());
+    }
+
 	// Pacman (fara textura)
     glUniform1i(useLightLoc, 1);
     glUniform1i(useTextureLoc, 0);
@@ -365,7 +592,8 @@ void display()
     glUniformMatrix4fv(rawModelLoc, 1, GL_FALSE, glm::value_ptr(modelMatrix));
     glDrawElements(GL_TRIANGLES, sphereElementCount, GL_UNSIGNED_INT, NULL);
 
-    glFlush();
+	// Comunicam GPU-ului ca am terminat de desenat pentru acest frame
+	glutSwapBuffers();
     glutPostRedisplay();
 }
 
@@ -405,12 +633,38 @@ void init()
     glEnable(GL_DEPTH_TEST);
     glewInit();
 
+    // Ghost
+    bool res = loadOBJ("obj/Ghost.obj", ghostVertices, ghostUVs, ghostNormals);
+
+    glGenVertexArrays(1, &ghostVao);
+    glBindVertexArray(ghostVao);
+
+    // Vertex Positions
+    glGenBuffers(1, &ghostVboPos);
+    glBindBuffer(GL_ARRAY_BUFFER, ghostVboPos);
+    glBufferData(GL_ARRAY_BUFFER, ghostVertices.size() * sizeof(glm::vec3), &ghostVertices[0], GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+    glEnableVertexAttribArray(0);
+
+    // Vertex Normals (Layout 2 in shader)
+    glGenBuffers(1, &ghostVboNorm);
+    glBindBuffer(GL_ARRAY_BUFFER, ghostVboNorm);
+    glBufferData(GL_ARRAY_BUFFER, ghostNormals.size() * sizeof(glm::vec3), &ghostNormals[0], GL_STATIC_DRAW);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+    glEnableVertexAttribArray(2);
+
+    glBindVertexArray(0);
+    initGhosts();
+    /////
+
     loadBrickTexture();
 
 	// Construim segmente de pereti pentru a reduce numarul de draw call-uri necesare la desenarea labirintului
     buildWallSegments();
     printf("Wall draw calls dramatically reduced from %d worst case to %d total\n", 
         MAZE_HEIGHT * MAZE_WIDTH, (int)wallSegments.size());
+
+    initPellets();
 
     glGenBuffers(1, &sphereVbo);
     glBindBuffer(GL_ARRAY_BUFFER, sphereVbo);
@@ -469,7 +723,7 @@ void reshape(int w, int h)
 
 void keyboard(unsigned char key, int x, int y) {
     float nextX = targetX;
-    float nextZ = targetZ;
+    float nextZ = targetZ;    
 
     switch (key) {
 		// Pentru a si d nu se misca lateral, ci sa se intoarca la 90 de grade stanga/dreapta,
@@ -546,7 +800,7 @@ void specialKeyboard(int key, int x, int y)
 int main(int argc, char** argv) 
 {
     glutInit(&argc, argv);
-    glutInitDisplayMode(GLUT_RGB | GLUT_DEPTH | GLUT_SINGLE);
+	glutInitDisplayMode(GLUT_RGB | GLUT_DEPTH | GLUT_DOUBLE); // Folosim double buffering pentru a preveni flickering-ul
     glutInitWindowPosition(200, 200);
     glutInitWindowSize(1000, 800);
     glutCreateWindow("Pac-Man");
