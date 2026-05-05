@@ -12,13 +12,21 @@
     <ClCompile Include="main.cpp">
       <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="objloader.cpp" />
+    <ClCompile Include="objloader.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="pixel_light.frag">
       <Filter>shaders</Filter>
     </None>
     <None Include="pixel_light.vert">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="depth.vert">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="depth.frag">
       <Filter>shaders</Filter>
     </None>
   </ItemGroup>
