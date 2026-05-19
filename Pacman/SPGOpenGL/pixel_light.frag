@@ -18,31 +18,28 @@ uniform sampler2D wallTexture;
 in vec4 FragPosLightSpace;
 uniform sampler2D shadowMap;
 
-float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {
+float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) 
+{
     vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
     projCoords = projCoords * 0.5 + 0.5;
     
-    // Daca pixelul este in afara luminii, consideram ca nu este in umbra
     if(projCoords.z > 1.0) return 0.0;
-    
-    float closestDepth = texture(shadowMap, projCoords.xy).r; 
+
     float currentDepth = projCoords.z;
-    
-    // Calculam bias-ul pentru a preveni shadow acne
-    float bias = max(0.06 * (1.0 - dot(normal, lightDir)), 0.008);
-    
-    // Implementam PCF (Percentage Closer Filtering) pentru a obtine marginile umbrei
+    float bias = max(0.05 * (1.0 - dot(normal, lightDir)), 0.005);
+
+    // Reduced PCF: Only 4 samples instead of 9
     float shadow = 0.0;
     vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
-    for(int x = -1; x <= 1; ++x) {
-        for(int y = -1; y <= 1; ++y) {
+    for(int x = 0; x <= 1; ++x) 
+    {
+        for(int y = 0; y <= 1; ++y) 
+        {
             float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r; 
-            shadow += currentDepth - bias > pcfDepth  ? 1.0 : 0.0;        
+            shadow += currentDepth - bias > pcfDepth ? 1.0 : 0.0;
         }    
     }
-    shadow /= 9.0;
-    
-    return shadow;
+    return shadow / 4.0;
 }
 
 vec3 lighting(vec3 pos, vec3 normal, vec3 lightPos, vec3 viewPos,
