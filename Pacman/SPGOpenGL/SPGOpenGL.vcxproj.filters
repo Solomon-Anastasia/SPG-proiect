@@ -29,5 +29,11 @@
     <None Include="depth.frag">
       <Filter>shaders</Filter>
     </None>
+    <None Include="skybox.vert">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="skybox.frag">
+      <Filter>shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

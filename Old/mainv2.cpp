@@ -38,7 +38,8 @@ int cubeElementCount = (GLsizei)wallCube.triangles.size() * 3;
 GLuint wallBoxVao, wallBoxVbo;
 GLuint wallTexture;
 
-glm::vec3 lightPos(10.0f, 20.0f, 15.0f); // Pozitia sursei de lumina
+//glm::vec3 lightPos(10.0f, 8.0f, 7.0f); // Pozitia sursei de lumina
+glm::vec3 lightPos(10.0f, 20.0f, 15.0f);
 glm::vec3 viewPos(5.0f, 18.0f, 12.0f); // Pozitia initiala a camerei
 
 // Pentru shadow mapping
@@ -46,13 +47,6 @@ GLuint depthMapFBO;
 GLuint depthMap;
 const unsigned int SHADOW_WIDTH = 2048, SHADOW_HEIGHT = 2048; // Rezolutia
 GLuint depth_shader_programme; // Avem nevoie de un shader separat pentru a desena in depth map
-
-// Cubemap
-GLuint skyboxShaderProg;
-GLuint skyboxVAO, skyboxVBO;
-GLuint cubemapTexture;
-
-GLint skyboxProjLoc, skyboxViewLoc, skyboxTexLoc;
 
 // Logica pentru lerping pentru pacman si camera
 float pacX = 9.0f, pacZ = 10.0f;
@@ -111,6 +105,7 @@ struct WallSegment
     float width, depth;
 };
 
+
 std::vector<WallSegment> wallSegments;
 std::vector<Vertex> allWallVertices;
 
@@ -118,7 +113,6 @@ std::vector<Vertex> allWallVertices;
 std::vector<glm::vec3> ghostVertices;
 std::vector<glm::vec3> ghostNormals;
 std::vector<glm::vec2> ghostUVs;
-
 GLuint ghostVao, ghostVboPos, ghostVboNorm;
 
 struct Ghost
@@ -137,7 +131,6 @@ struct Ghost
     int routeIndex = 0;
 };
 
-std::vector<Ghost> ghosts;
 
 struct ShaderUniforms {
     GLint mvpLoc = -1;
@@ -157,37 +150,7 @@ struct ShaderUniforms {
 ShaderUniforms lightUniforms;   // pentru shader_programme
 ShaderUniforms depthUniforms;   // pentru depth_shader_programme
 
-void mouse(int button, int state, int x, int y)
-{
-    if (button == GLUT_LEFT_BUTTON)
-    {
-        mouseDown = (state == GLUT_DOWN);
-        lastMouseX = x;
-    }
-}
-
-void motion(int x, int y)
-{
-    if (mouseDown && lastMouseX >= 0)
-    {
-        float delta = (x - lastMouseX) * 0.01f;
-        cameraOrbit += delta;
-        lastMouseX = x;
-    }
-}
-
-std::string textFileRead(char* fn)
-{
-    std::ifstream ifile(fn);
-    std::string filetext;
-    while (ifile.good())
-    {
-        std::string line;
-        std::getline(ifile, line);
-        filetext.append(line + "\n");
-    }
-    return filetext;
-}
+std::vector<Ghost> ghosts;
 
 void initGhosts()
 {
@@ -305,6 +268,38 @@ void checkGameOver()
             //exit(0);
         }
     }
+}
+
+void mouse(int button, int state, int x, int y)
+{
+    if (button == GLUT_LEFT_BUTTON)
+    {
+        mouseDown = (state == GLUT_DOWN);
+        lastMouseX = x;
+    }
+}
+
+void motion(int x, int y)
+{
+    if (mouseDown && lastMouseX >= 0)
+    {
+        float delta = (x - lastMouseX) * 0.01f;
+        cameraOrbit += delta;
+        lastMouseX = x;
+    }
+}
+
+std::string textFileRead(char* fn)
+{
+    std::ifstream ifile(fn);
+    std::string filetext;
+    while (ifile.good())
+    {
+        std::string line;
+        std::getline(ifile, line);
+        filetext.append(line + "\n");
+    }
+    return filetext;
 }
 
 // Construire segmente de pereti
@@ -463,7 +458,7 @@ void loadWallTexture()
     stbi_set_flip_vertically_on_load(true);
 
     int width, height, nrChannels;
-    unsigned char* data = stbi_load("img/Wall.png", &width, &height, &nrChannels, 0);
+    unsigned char* data = stbi_load("Plastic008_1K-PNG_Color.png", &width, &height, &nrChannels, 0);
 
     if (data) 
     {
@@ -485,42 +480,6 @@ void loadWallTexture()
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-}
-
-GLuint loadCubemap(std::vector<std::string> faces)
-{
-    GLuint textureID;
-    glGenTextures(1, &textureID);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
-
-    int width, height, nrChannels;
-
-    stbi_set_flip_vertically_on_load(false);
-
-    for (unsigned int i = 0; i < faces.size(); i++)
-    {
-        unsigned char* data = stbi_load(faces[i].c_str(), &width, &height, &nrChannels, 0);
-
-        if (data)
-        {
-            GLenum format = (nrChannels == 4) ? GL_RGBA : GL_RGB;
-            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
-                0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
-            stbi_image_free(data);
-        }
-        else
-        {
-            std::cout << "Cubemap texture failed to load at path: " << faces[i] << std::endl;
-            stbi_image_free(data);
-        }
-    }
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-
-    return textureID;
 }
 
 // Se apeleaza de 2 ori: o data pentru a desena scena normala, si o data pentru a desena in depth map
@@ -715,6 +674,7 @@ void display()
     glViewport(0, 0, glutGet(GLUT_WINDOW_WIDTH), glutGet(GLUT_WINDOW_HEIGHT));
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+
     glUniform3fv(lightUniforms.viewPosLoc, 1, glm::value_ptr(viewPos));
 
     glUniformMatrix4fv(lightUniforms.lightSpaceLoc, 1, GL_FALSE, glm::value_ptr(lightSpaceMatrix));
@@ -730,24 +690,6 @@ void display()
 
     // Desenam toate obiectele normal
     renderScene(lightUniforms);
-
-	// Cubemap pentru skybox
-	// Desenam skybox-ul ultimul, in spate la toate
-    glDepthFunc(GL_LEQUAL);
-    glUseProgram(skyboxShaderProg);
-
-    glUniformMatrix4fv(skyboxProjLoc, 1, GL_FALSE, glm::value_ptr(projectionMatrix));
-    glUniformMatrix4fv(skyboxViewLoc, 1, GL_FALSE, glm::value_ptr(viewMatrix));
-
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
-
-    glBindVertexArray(skyboxVAO);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
-    glBindVertexArray(0);
-
-    // Resetam functia de adancime
-    glDepthFunc(GL_LESS);
 
     glutSwapBuffers();
     glutPostRedisplay();
@@ -904,103 +846,6 @@ void init()
     glUniform1i(lightUniforms.textureLoc, 0);
     glUniform1i(lightUniforms.shadowMapLoc, 1);
     glUniform3fv(lightUniforms.lightPosLoc, 1, glm::value_ptr(lightPos));
-
-	// Initializare skybox
-    float skyboxVertices[] = {
-        -1.0f,  1.0f, -1.0f,
-        -1.0f, -1.0f, -1.0f,
-         1.0f, -1.0f, -1.0f,
-         1.0f, -1.0f, -1.0f,
-         1.0f,  1.0f, -1.0f,
-        -1.0f,  1.0f, -1.0f,
-
-        -1.0f, -1.0f,  1.0f,
-        -1.0f, -1.0f, -1.0f,
-        -1.0f,  1.0f, -1.0f,
-        -1.0f,  1.0f, -1.0f,
-        -1.0f,  1.0f,  1.0f,
-        -1.0f, -1.0f,  1.0f,
-
-         1.0f, -1.0f, -1.0f,
-         1.0f, -1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f, -1.0f,
-         1.0f, -1.0f, -1.0f,
-
-        -1.0f, -1.0f,  1.0f,
-        -1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,
-         1.0f, -1.0f,  1.0f,
-        -1.0f, -1.0f,  1.0f,
-
-        -1.0f,  1.0f, -1.0f,
-         1.0f,  1.0f, -1.0f,
-         1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,
-        -1.0f,  1.0f,  1.0f,
-        -1.0f,  1.0f, -1.0f,
-
-        -1.0f, -1.0f, -1.0f,
-        -1.0f, -1.0f,  1.0f,
-         1.0f, -1.0f,  1.0f,
-         1.0f, -1.0f,  1.0f,
-         1.0f, -1.0f, -1.0f,
-        -1.0f, -1.0f, -1.0f
-    };
-
-    glGenVertexArrays(1, &skyboxVAO);
-    glGenBuffers(1, &skyboxVBO);
-    glBindVertexArray(skyboxVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, skyboxVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-    glBindVertexArray(0);
-
-  //  std::vector<std::string> faces{
-  //      "img/nz.png", // Dreapta
-		//"img/pz.png", // Stanga
-		//"img/py.png", // Sus
-		//"img/ny.png", // Jos
-		//"img/px.png", // Fata
-		//"img/nx.png" // Spate
-  //  };
-    std::vector<std::string> faces{
-        "img/right.png",
-        "img/left.png",
-        "img/top.png",
-        "img/bottom.png",
-        "img/front.png",
-        "img/back.png"
-    };
-    cubemapTexture = loadCubemap(faces);
-
-    std::string vsSkyboxText = textFileRead("skybox.vert");
-    std::string fsSkyboxText = textFileRead("skybox.frag");
-    const char* skyboxVertex_shader = vsSkyboxText.c_str();
-    const char* skyboxFragment_shader = fsSkyboxText.c_str();
-
-    GLuint vsSkybox = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vsSkybox, 1, &skyboxVertex_shader, NULL);
-    glCompileShader(vsSkybox);
-
-    GLuint fsSkybox = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fsSkybox, 1, &skyboxFragment_shader, NULL);
-    glCompileShader(fsSkybox);
-
-    skyboxShaderProg = glCreateProgram();
-    glAttachShader(skyboxShaderProg, vsSkybox);
-    glAttachShader(skyboxShaderProg, fsSkybox);
-    glLinkProgram(skyboxShaderProg);
-
-    skyboxProjLoc = glGetUniformLocation(skyboxShaderProg, "projection");
-    skyboxViewLoc = glGetUniformLocation(skyboxShaderProg, "view");
-    skyboxTexLoc = glGetUniformLocation(skyboxShaderProg, "skybox");
-
-    glUseProgram(skyboxShaderProg);
-    glUniform1i(skyboxTexLoc, 0);
 }
 
 void reshape(int w, int h)

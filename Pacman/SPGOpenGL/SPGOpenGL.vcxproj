@@ -125,6 +125,8 @@
     <None Include="depth.vert" />
     <None Include="pixel_light.frag" />
     <None Include="pixel_light.vert" />
+    <None Include="skybox.frag" />
+    <None Include="skybox.vert" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
