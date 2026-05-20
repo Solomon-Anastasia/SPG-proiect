@@ -4,6 +4,7 @@ out vec4 fragColor;
 in vec3 normal;
 in vec3 pos;
 in vec2 TexCoord;
+in vec4 FragPosLightSpace;
 
 uniform vec3 lightPos;
 uniform vec3 viewPos;
@@ -15,7 +16,6 @@ uniform bool useTexture;
 
 uniform sampler2D wallTexture;
 
-in vec4 FragPosLightSpace;
 uniform sampler2D shadowMap;
 
 float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) 

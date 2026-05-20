@@ -114,6 +114,7 @@ struct WallSegment
 
 std::vector<WallSegment> wallSegments;
 std::vector<Vertex> allWallVertices;
+GLuint wallNormalMap;
 
 // Fantome
 std::vector<glm::vec3> ghostVertices;
@@ -387,14 +388,9 @@ void buildWallSegments()
     }
 }
 
-void addVertex(
-    float x, float y, float z, 
-    float u, float v, 
-    float nx, float ny, float nz
-)
+void addVertex(float x, float y, float z, float u, float v, float nx, float ny, float nz) 
 {
     Vertex vert;
-
     vert.pos = glm::vec3(x, y, z);
     vert.texCoord = glm::vec2(u, v);
     vert.normal = glm::vec3(nx, ny, nz);
@@ -452,15 +448,12 @@ void buildStaticWallBuffer()
     glBindBuffer(GL_ARRAY_BUFFER, wallBoxVbo);
     glBufferData(GL_ARRAY_BUFFER, allWallVertices.size() * sizeof(Vertex), allWallVertices.data(), GL_STATIC_DRAW);
 
-    // Pozitiile
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
 
-    // UV
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, texCoord));
 
-	// Normalele
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
 
@@ -552,6 +545,35 @@ GLuint loadCubemap(std::vector<std::string> faces)
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 
     return textureID;
+}
+
+void loadNormalMap()
+{
+    glGenTextures(1, &wallNormalMap);
+    glBindTexture(GL_TEXTURE_2D, wallNormalMap);
+
+    stbi_set_flip_vertically_on_load(true);
+
+    int width, height, nrChannels;
+    unsigned char* data = stbi_load("img/WallNormal.png", &width, &height, &nrChannels, 0);
+
+    if (data)
+    {
+        GLenum format = (nrChannels == 4) ? GL_RGBA : GL_RGB;
+        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+        glGenerateMipmap(GL_TEXTURE_2D);
+        printf("Normal map texture loaded successfully: %dx%d\n", width, height);
+    }
+    else
+    {
+        printf("ERROR: Failed to load normal map texture!\n");
+    }
+    stbi_image_free(data);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 }
 
 void restartGame()
@@ -803,6 +825,10 @@ void display()
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, depthMap);
 
+    // Normal map
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, wallNormalMap);
+
     // Desenam toate obiectele normal
     renderScene(lightUniforms);
 
@@ -918,6 +944,7 @@ void init()
     buildStaticWallBuffer();
 
     loadWallTexture();
+    loadNormalMap();
 
     printf("Wall draw calls reduced from %d worst case to %d total\n", MAZE_HEIGHT * MAZE_WIDTH, (int)wallSegments.size());
 
@@ -986,6 +1013,11 @@ void init()
     glUniform1i(lightUniforms.textureLoc, 0);
     glUniform1i(lightUniforms.shadowMapLoc, 1);
     glUniform3fv(lightUniforms.lightPosLoc, 1, glm::value_ptr(lightPos));
+
+    // Initializare normal map
+    GLint normalMapLoc = glGetUniformLocation(shader_programme, "normalMapTex");
+    glUseProgram(shader_programme);
+    glUniform1i(normalMapLoc, 2);
 
 	// Initializare skybox
     float skyboxVertices[] = {

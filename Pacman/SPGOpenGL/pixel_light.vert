@@ -23,8 +23,8 @@ void main()
 
     // Daca nu avem o normala valida, folosim pozitia ca normala (pentru sfere)
     vec3 actualNormal = length(vNormal) > 0.1 ? vNormal : normalize(vPos);
-    
-    normal = mat3(normalMatrix) * actualNormal;
+    normal = normalize(mat3(normalMatrix) * actualNormal);
+
     pos = vec3(modelMatrix * vec4(vPos, 1.0));
 
     TexCoord = vTexCoord;
