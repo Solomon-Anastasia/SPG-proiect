@@ -73,6 +73,8 @@ int lastMouseX = -1;
 float cameraOrbit = 0.0f;
 bool mouseDown = false;
 
+bool isGameOver = false;
+
 // 1 = perete, 0 = cale
 const int MAZE_WIDTH = 20;
 const int MAZE_HEIGHT = 15;
@@ -93,7 +95,6 @@ int maze[MAZE_HEIGHT][MAZE_WIDTH] = {
     {1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1},
     {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
 };
-
 
 bool pellets[MAZE_HEIGHT][MAZE_WIDTH];
 
@@ -187,6 +188,42 @@ std::string textFileRead(char* fn)
         filetext.append(line + "\n");
     }
     return filetext;
+}
+
+void renderText2D(float x, float y, void* font, const std::string& text, glm::vec3 color)
+{
+    // Oprim testul pentru a afisa textul deasupra 
+    glDisable(GL_DEPTH_TEST);
+    glUseProgram(0); // Unbind pentru a elimina orice shader activ
+
+    // Activam blending pentru a face fundalul semitransparent
+	glEnable(GL_BLEND); 
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    glColor4f(0.0f, 0.0f, 0.0f, 0.3f);
+
+    glBegin(GL_QUADS);
+        glVertex2f(-1.0f, -1.0f);
+        glVertex2f(1.0f, -1.0f);
+        glVertex2f(1.0f, 1.0f);
+        glVertex2f(-1.0f, 1.0f);
+    glEnd();
+    
+	// Dupa desenarea fundalului, dezactivam blending-ul pentru a nu afecta restul scenei
+    glDisable(GL_BLEND);
+
+    glColor3f(color.r, color.g, color.b);
+
+	// Pozititonam textul in coordonate de ecran
+    glRasterPos2f(x, y);
+
+    for (char c : text)
+    {
+        glutBitmapCharacter(font, c);
+    }
+
+	// Reactivam testul de adancime pentru restul scenei
+    glEnable(GL_DEPTH_TEST);
 }
 
 void initGhosts()
@@ -289,20 +326,6 @@ void updateGhosts(float dt)
             {
                 g.targetAngle = PI / 2.0f; // Fata sus
             }
-        }
-    }
-}
-
-void checkGameOver()
-{
-    for (auto& g : ghosts)
-    {
-        float dist = glm::distance(glm::vec2(pacX, pacZ), glm::vec2(g.x, g.z));
-
-        if (dist < 0.4f) // Raza de coliziune pentru pacman si fantoma
-        {
-            //std::cout << "GAME OVER!" << std::endl;
-            //exit(0);
         }
     }
 }
@@ -523,6 +546,45 @@ GLuint loadCubemap(std::vector<std::string> faces)
     return textureID;
 }
 
+void restartGame()
+{
+    pacX = 9.0f;
+    pacZ = 10.0f;
+    targetX = 9.0f;
+    targetZ = 10.0f;
+
+    currentAngle = PI;
+    targetAngle = PI;
+    cameraAngle = PI;
+    cameraTarget = PI;
+    cameraOrbit = 0.0f;
+
+    initPellets();
+    initGhosts();
+
+    isGameOver = false;
+    printf("Game restarted!\n");
+}
+
+void checkGameOver()
+{
+    for (auto& g : ghosts)
+    {
+        if (isGameOver)
+        {
+            return;
+        }
+
+        float dist = glm::distance(glm::vec2(pacX, pacZ), glm::vec2(g.x, g.z));
+
+        if (dist < 0.4f) // Raza de coliziune pentru pacman si fantoma
+        {
+            isGameOver = true;
+            break;
+        }
+    }
+}
+
 // Se apeleaza de 2 ori: o data pentru a desena scena normala, si o data pentru a desena in depth map
 void renderScene(const ShaderUniforms& u)
 {
@@ -623,52 +685,55 @@ void display()
 	// Minimizarea deltaTime pentru a evita probleme de fizica)
     if (deltaTime > 0.1f) deltaTime = 0.1f;
 
-    // Logica pentru lerping pentru miscarea lui Pacman
-    float interpSpeed = 10.0f * deltaTime;
-    pacX += (targetX - pacX) * interpSpeed;
-    pacZ += (targetZ - pacZ) * interpSpeed;
-
-    // Consumare pellet
-    int currentGridX = (int)(pacX + 0.5f);
-    int currentGridZ = (int)(pacZ + 0.5f);
-
-    // Verificam daca pozitia curenta a lui Pacman corespunde unui pellet si,
-    // daca da, il consumam (il dezactivam)
-    if (currentGridX >= 0 && currentGridX < MAZE_WIDTH &&
-        currentGridZ >= 0 && currentGridZ < MAZE_HEIGHT)
+    if (!isGameOver)
     {
-        if (pellets[currentGridZ][currentGridX])
+        // Logica pentru lerping pentru miscarea lui Pacman
+        float interpSpeed = 10.0f * deltaTime;
+        pacX += (targetX - pacX) * interpSpeed;
+        pacZ += (targetZ - pacZ) * interpSpeed;
+
+        // Consumare pellet
+        int currentGridX = (int)(pacX + 0.5f);
+        int currentGridZ = (int)(pacZ + 0.5f);
+
+        // Verificam daca pozitia curenta a lui Pacman corespunde unui pellet si,
+        // daca da, il consumam (il dezactivam)
+        if (currentGridX >= 0 && currentGridX < MAZE_WIDTH &&
+            currentGridZ >= 0 && currentGridZ < MAZE_HEIGHT)
         {
-            pellets[currentGridZ][currentGridX] = false;
+            if (pellets[currentGridZ][currentGridX])
+            {
+                pellets[currentGridZ][currentGridX] = false;
+            }
         }
+
+        // Logica teleportarii: daca Pacman depaseste marginile labirintului,
+        // il aducem pe partea cealalta
+        if (pacX < -0.5f)
+        {
+            pacX += MAZE_WIDTH;
+            targetX += MAZE_WIDTH;
+        }
+        else if (pacX > MAZE_WIDTH - 0.5f)
+        {
+            pacX -= MAZE_WIDTH;
+            targetX -= MAZE_WIDTH;
+        }
+
+        // Logica pentru rotirea lui pacman + camera in directia miscarii
+        // 1D Shortest-Path Lerp
+        float rotationFactor = 10.0f * deltaTime;
+
+        float angleDiff = targetAngle - currentAngle;
+        while (angleDiff > PI) angleDiff -= 2.0f * PI;
+        while (angleDiff < -PI) angleDiff += 2.0f * PI;
+        currentAngle += angleDiff * rotationFactor;
+
+        float camDiff = cameraTarget - cameraAngle;
+        while (camDiff > PI) camDiff -= 2.0f * PI;
+        while (camDiff < -PI) camDiff += 2.0f * PI;
+        cameraAngle += camDiff * rotationFactor;
     }
-
-    // Logica teleportarii: daca Pacman depaseste marginile labirintului,
-    // il aducem pe partea cealalta
-    if (pacX < -0.5f)
-    {
-        pacX += MAZE_WIDTH;
-        targetX += MAZE_WIDTH;
-    }
-    else if (pacX > MAZE_WIDTH - 0.5f)
-    {
-        pacX -= MAZE_WIDTH;
-        targetX -= MAZE_WIDTH;
-    }
-
-    // Logica pentru rotirea lui pacman + camera in directia miscarii
-    // 1D Shortest-Path Lerp
-    float rotationFactor = 10.0f * deltaTime;
-
-    float angleDiff = targetAngle - currentAngle;
-    while (angleDiff > PI) angleDiff -= 2.0f * PI;
-    while (angleDiff < -PI) angleDiff += 2.0f * PI;
-    currentAngle += angleDiff * rotationFactor;
-
-    float camDiff = cameraTarget - cameraAngle;
-    while (camDiff > PI) camDiff -= 2.0f * PI;
-    while (camDiff < -PI) camDiff += 2.0f * PI;
-    cameraAngle += camDiff * rotationFactor;
 
     // Camera in spatele lui pacman
     float distanceBehind = 5.0f;
@@ -681,8 +746,11 @@ void display()
     viewPos = glm::vec3(camX, heightAbove, camZ);
     viewMatrix = glm::lookAt(viewPos, glm::vec3(pacX, 0.3f, pacZ), glm::vec3(0, 1, 0));
 
-    updateGhosts(deltaTime);
-    checkGameOver();
+    if (!isGameOver)
+    {
+        updateGhosts(deltaTime);
+        checkGameOver();
+    }
 
     // Shadow map setup
     // 
@@ -748,6 +816,13 @@ void display()
 
     // Resetam functia de adancime
     glDepthFunc(GL_LESS);
+
+	// Afisare text de Game Over
+    if (isGameOver)
+    {
+        renderText2D(-0.15f, 0.1f, GLUT_BITMAP_TIMES_ROMAN_24, "GAME OVER", glm::vec3(1.0f, 0.0f, 0.0f));
+        renderText2D(-0.28f, -0.05f, GLUT_BITMAP_HELVETICA_18, "Press 'R' to restart the game", glm::vec3(1.0f, 1.0f, 1.0f));
+    }
 
     glutSwapBuffers();
     glutPostRedisplay();
@@ -838,8 +913,9 @@ void init()
     loadWallTexture();
     printf("Wall draw calls reduced from %d worst case to %d total\n", MAZE_HEIGHT * MAZE_WIDTH, (int)wallSegments.size());
 
-    initPellets();
-    initGhosts();
+    /*initPellets();
+    initGhosts();*/
+    restartGame();
 
     std::string vsLightText = textFileRead("pixel_light.vert");
     std::string fsLightText = textFileRead("pixel_light.frag");
@@ -959,14 +1035,6 @@ void init()
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
     glBindVertexArray(0);
 
-  //  std::vector<std::string> faces{
-  //      "img/nz.png", // Dreapta
-		//"img/pz.png", // Stanga
-		//"img/py.png", // Sus
-		//"img/ny.png", // Jos
-		//"img/px.png", // Fata
-		//"img/nx.png" // Spate
-  //  };
     std::vector<std::string> faces{
         "img/right.png",
         "img/left.png",
@@ -1009,7 +1077,21 @@ void reshape(int w, int h)
     projectionMatrix = glm::perspective(PI / 4, (float)w / h, 0.1f, 100.0f);
 }
 
-void keyboard(unsigned char key, int x, int y) {
+void keyboard(unsigned char key, int x, int y) 
+{
+
+    if (key == 'r' || key == 'R') 
+    {
+        restartGame();
+        glutPostRedisplay();
+        return;
+    }
+
+    if (isGameOver)
+    {
+        return;
+    }
+
     float nextX = targetX;
     float nextZ = targetZ;
 
