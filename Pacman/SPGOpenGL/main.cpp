@@ -84,6 +84,7 @@ float cameraOrbit = 0.0f;
 bool mouseDown = false;
 
 bool isGameOver = false;
+bool isGameWon = false;
 
 // 1 = perete, 0 = cale
 const int MAZE_WIDTH = 20;
@@ -643,6 +644,7 @@ void restartGame()
     initGhosts();
 
     isGameOver = false;
+    isGameWon = false;
     printf("Game restarted!\n");
 }
 
@@ -765,7 +767,7 @@ void display()
     // Minimizarea deltaTime pentru a evita probleme de fizica)
     if (deltaTime > 0.1f) deltaTime = 0.1f;
 
-    if (!isGameOver)
+    if (!isGameOver && !isGameWon)
     {
         // Logica pentru lerping pentru miscarea lui Pacman
         float interpSpeed = 10.0f * deltaTime;
@@ -784,6 +786,26 @@ void display()
             if (pellets[currentGridZ][currentGridX])
             {
                 pellets[currentGridZ][currentGridX] = false;
+
+                bool pelletsLeft = false;
+                for (int r = 0; r < MAZE_HEIGHT; r++) 
+                {
+                    for (int c = 0; c < MAZE_WIDTH; c++) 
+                    {
+                        if (pellets[r][c]) 
+                        {
+                            pelletsLeft = true;
+                            break;
+                        }
+                    }
+                    if (pelletsLeft) break;
+                }
+
+				// Daca nu mai avem niciun pellet, jucatorul a castigat
+                if (!pelletsLeft) 
+                {
+                    isGameWon = true;
+                }
             }
         }
 
@@ -826,7 +848,7 @@ void display()
     viewPos = glm::vec3(camX, heightAbove, camZ);
     viewMatrix = glm::lookAt(viewPos, glm::vec3(pacX, 0.3f, pacZ), glm::vec3(0, 1, 0));
 
-    if (!isGameOver)
+    if (!isGameOver && !isGameWon)
     {
         updateGhosts(deltaTime);
         checkGameOver();
@@ -952,7 +974,13 @@ void display()
     if (isGameOver)
     {
         renderText2D(-0.15f, 0.1f, GLUT_BITMAP_TIMES_ROMAN_24, "GAME OVER", glm::vec3(1.0f, 0.0f, 0.0f));
-        renderText2D(-0.28f, -0.05f, GLUT_BITMAP_HELVETICA_18, "Press 'R' to restart the game", glm::vec3(1.0f, 1.0f, 1.0f));
+        renderText2D(-0.28f, -0.05f, GLUT_BITMAP_HELVETICA_18, "Press 'R' to restart the game!", glm::vec3(1.0f, 1.0f, 1.0f));
+    }
+    else if (isGameWon)
+    {
+        // Bright green text for the win
+        renderText2D(-0.13f, 0.1f, GLUT_BITMAP_TIMES_ROMAN_24, "YOU WIN!", glm::vec3(0.0f, 1.0f, 0.0f));
+        renderText2D(-0.24f, -0.05f, GLUT_BITMAP_HELVETICA_18, "Press 'R' to play again!", glm::vec3(1.0f, 1.0f, 1.0f));
     }
 
     glutSwapBuffers();
@@ -1270,7 +1298,7 @@ void keyboard(unsigned char key, int x, int y)
         return;
     }
 
-    if (isGameOver)
+    if (isGameOver || isGameWon)
     {
         return;
     }
@@ -1279,18 +1307,45 @@ void keyboard(unsigned char key, int x, int y)
     float nextZ = targetZ;
 
     switch (key) {
+    case 'f':
+    case 'F':
+        glutFullScreenToggle();
+        printf("Fullscreen mode\n");
+        return;
+        // Pentru testare
+    case 'k':
+    case 'K':
+        printf("Cheat code activated!\n");
+        for (int r = 0; r < MAZE_HEIGHT; r++)
+        {
+            for (int c = 0; c < MAZE_WIDTH; c++)
+            {
+                pellets[r][c] = false;
+            }
+        }
+
+        pellets[9][9] = true;
+        pellets[8][9] = true;
+        pellets[7][9] = true;
+        return;
+        
+        // Toggle pentru glow
     case 'g':
     case 'G':
         enableGlow = !enableGlow;
         printf("Glow effect: %s\n", enableGlow ? "ON" : "OFF");
         glutPostRedisplay();
         return;
+
+		// Toggle pentru umbre
     case 'm':
     case 'M':
         enableShadows = !enableShadows;
         printf("Shadows: %s\n", enableShadows ? "ON" : "OFF");
         glutPostRedisplay();
         return;
+
+		// Toggle pentru normal mapping
     case 'n':
     case 'N':
         enableNormalMapping = !enableNormalMapping;
