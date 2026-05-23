@@ -6,6 +6,10 @@ in vec3 pos;
 in vec2 TexCoord;
 in vec4 FragPosLightSpace;
 
+in vec3 TangentLightPos;
+in vec3 TangentViewPos;
+in vec3 TangentFragPos;
+
 uniform vec3 lightPos;
 uniform vec3 viewPos;
 
@@ -15,8 +19,10 @@ uniform bool useLighting;
 uniform bool useTexture;
 
 uniform sampler2D wallTexture;
-
+uniform sampler2D normalMap;
 uniform sampler2D shadowMap;
+
+
 
 float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) 
 {
@@ -69,29 +75,77 @@ vec3 lighting(vec3 pos, vec3 normal, vec3 lightPos, vec3 viewPos,
 
 void main()
 {
-    vec3 baseColor;
+    vec3 texColor = texture(wallTexture, TexCoord).rgb;
+    
+    vec3 wallTint = vec3(0.4, 0.4, 0.65); // Brighter base color
 
-    if (useTexture) 
-    {
-        baseColor = texture(wallTexture, TexCoord).rgb;
-    } 
-    else 
-    {
-        baseColor = objectColor;
-    }
+    vec3 baseColor = useTexture ? (texColor * wallTint) : objectColor;
 
     if (!useLighting) 
     {
         fragColor = vec4(baseColor, 1.0);
+        return;
+    }
+
+    vec3 N;
+    if (useTexture) 
+    {
+        N = texture(normalMap, TexCoord).rgb;
+        N = N * 2.0 - 1.0; 
+        
+        // Amplificam componentele X si Y pentru a face detaliile mai vizibile
+        N.xy *= 1.5; 
+        
+        N = normalize(N); 
     } 
     else 
     {
-        vec3 ambient = vec3(0.4);
-        vec3 diffuse = vec3(0.8);
-        vec3 specular = vec3(0.3);
-        float specPower = 16.0;
-        
-        vec3 color = lighting(pos, normal, lightPos, viewPos, ambient, diffuse, specular, specPower, baseColor);
-        fragColor = vec4(color, 1.0);
+        N = normalize(normal);
     }
+
+    vec3 lightDir = useTexture ? normalize(TangentLightPos - TangentFragPos) : normalize(lightPos - pos);
+    vec3 viewDir  = useTexture ? normalize(TangentViewPos - TangentFragPos) : normalize(viewPos - pos);
+
+    // Ambient
+    vec3 ambientComponent = vec3(0.25) * baseColor;
+
+    // Lumina principala
+    float dotLN = max(dot(N, lightDir), 0.0);
+    vec3 diffuseMain = vec3(0.8) * dotLN * baseColor;
+    
+    vec3 R1 = reflect(-lightDir, N);
+    float spec1 = pow(max(dot(R1, viewDir), 0.0), 32.0);
+    vec3 specularMain = vec3(0.3) * spec1;
+
+    // Lumina pentru marirea detaliilor peretilor
+    vec3 diffuseHeadlamp = vec3(0.0);
+    vec3 specularHeadlamp = vec3(0.0);
+    
+    if (useTexture) 
+    {
+        vec3 headlampDir = viewDir; 
+        
+        float headlampDot = max(dot(N, headlampDir), 0.0);
+        vec3 R2 = reflect(-headlampDir, N);
+
+        // Raised to 32.0 for a tighter, sharper shine
+        float spec2 = pow(max(dot(R2, viewDir), 0.0), 32.0); 
+        
+        diffuseHeadlamp = vec3(0.1) * headlampDot * baseColor;
+        
+        // Raised from 0.1 to 0.35 to bring back the specular highlight
+        specularHeadlamp = vec3(0.25) * spec2;               
+    }
+
+    // Umbra pentru lumina principala
+    vec3 worldNormal = normalize(normal);
+    vec3 worldLightDir = normalize(lightPos - pos);
+    float shadow = ShadowCalculation(FragPosLightSpace, worldNormal, worldLightDir);
+
+    // Aplicam umbra doar la lumina principala
+    // Shadows ONLY affect the Main Light. The Headlamp ignores shadows so the bumps are always visible!
+    vec3 mainLightFinal = (1.0 - shadow) * (diffuseMain + specularMain);
+    vec3 finalColor = ambientComponent + mainLightFinal + diffuseHeadlamp + specularHeadlamp;
+    
+    fragColor = vec4(finalColor, 1.0);
 }

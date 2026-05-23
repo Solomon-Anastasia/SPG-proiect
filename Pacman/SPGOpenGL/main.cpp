@@ -51,6 +51,7 @@ GLuint depth_shader_programme; // Avem nevoie de un shader separat pentru a dese
 GLuint skyboxShaderProg;
 GLuint skyboxVAO, skyboxVBO;
 GLuint cubemapTexture;
+GLuint wallNormalMap;
 
 GLint skyboxProjLoc, skyboxViewLoc, skyboxTexLoc;
 
@@ -99,11 +100,12 @@ int maze[MAZE_HEIGHT][MAZE_WIDTH] = {
 bool pellets[MAZE_HEIGHT][MAZE_WIDTH];
 
 // Salvam vertexii pentru a reduce draw call-urile pentru fiecare cub din labirint
-struct Vertex 
+struct Vertex
 {
     glm::vec3 pos;
     glm::vec2 texCoord;
     glm::vec3 normal;
+    glm::vec3 tangent;
 };
 
 struct WallSegment
@@ -153,6 +155,7 @@ struct ShaderUniforms {
     GLint viewPosLoc = -1;
     GLint textureLoc = -1;
     GLint shadowMapLoc = -1;
+    GLint normalMapLoc = -1;
 };
 
 ShaderUniforms lightUniforms;   // pentru shader_programme
@@ -197,24 +200,24 @@ void renderText2D(float x, float y, void* font, const std::string& text, glm::ve
     glUseProgram(0); // Unbind pentru a elimina orice shader activ
 
     // Activam blending pentru a face fundalul semitransparent
-	glEnable(GL_BLEND); 
+    glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     glColor4f(0.0f, 0.0f, 0.0f, 0.3f);
 
     glBegin(GL_QUADS);
-        glVertex2f(-1.0f, -1.0f);
-        glVertex2f(1.0f, -1.0f);
-        glVertex2f(1.0f, 1.0f);
-        glVertex2f(-1.0f, 1.0f);
+    glVertex2f(-1.0f, -1.0f);
+    glVertex2f(1.0f, -1.0f);
+    glVertex2f(1.0f, 1.0f);
+    glVertex2f(-1.0f, 1.0f);
     glEnd();
-    
-	// Dupa desenarea fundalului, dezactivam blending-ul pentru a nu afecta restul scenei
+
+    // Dupa desenarea fundalului, dezactivam blending-ul pentru a nu afecta restul scenei
     glDisable(GL_BLEND);
 
     glColor3f(color.r, color.g, color.b);
 
-	// Pozititonam textul in coordonate de ecran
+    // Pozititonam textul in coordonate de ecran
     glRasterPos2f(x, y);
 
     for (char c : text)
@@ -222,7 +225,7 @@ void renderText2D(float x, float y, void* font, const std::string& text, glm::ve
         glutBitmapCharacter(font, c);
     }
 
-	// Reactivam testul de adancime pentru restul scenei
+    // Reactivam testul de adancime pentru restul scenei
     glEnable(GL_DEPTH_TEST);
 }
 
@@ -294,7 +297,7 @@ void updateGhosts(float dt)
         g.currentAngle += angleDiff * (10.0f * dt);
 
         // Daca am ajuns aproape de tinta, trecem la urmatorul punct din ruta
-        if (dist <= 0.01f) 
+        if (dist <= 0.01f)
         {
             g.x = g.targetX;
             g.z = g.targetZ;
@@ -328,6 +331,26 @@ void updateGhosts(float dt)
             }
         }
     }
+}
+
+void loadNormalMap()
+{
+    glGenTextures(1, &wallNormalMap);
+    glBindTexture(GL_TEXTURE_2D, wallNormalMap);
+    stbi_set_flip_vertically_on_load(true);
+
+    int width, height, nrChannels;
+    unsigned char* data = stbi_load("img/WallNormal.png", &width, &height, &nrChannels, 0);
+    if (data) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+        glGenerateMipmap(GL_TEXTURE_2D);
+    }
+    stbi_image_free(data);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 }
 
 // Construire segmente de pereti
@@ -388,9 +411,10 @@ void buildWallSegments()
 }
 
 void addVertex(
-    float x, float y, float z, 
-    float u, float v, 
-    float nx, float ny, float nz
+    float x, float y, float z,
+    float u, float v,
+    float nx, float ny, float nz,
+    float tx, float ty, float tz
 )
 {
     Vertex vert;
@@ -398,22 +422,24 @@ void addVertex(
     vert.pos = glm::vec3(x, y, z);
     vert.texCoord = glm::vec2(u, v);
     vert.normal = glm::vec3(nx, ny, nz);
+    vert.tangent = glm::vec3(tx, ty, tz);
+
     allWallVertices.push_back(vert);
 }
 
-void buildStaticWallBuffer() 
+void buildStaticWallBuffer()
 {
     allWallVertices.clear();
     float wallH = 1.0f;
 
-    for (const WallSegment& seg : wallSegments) 
+    for (const WallSegment& seg : wallSegments)
     {
-		// Calculam coordonatele celor 8 colturile ale cubului de perete
+        // Calculam coordonatele celor 8 colturile ale cubului de perete
         float x0 = seg.x - 0.5f;
         float x1 = seg.x + seg.width - 0.5f;
         float z0 = seg.z - 0.5f;
         float z1 = seg.z + seg.depth - 0.5f;
-        
+
         float y0 = -0.5f;
         float y1 = y0 + wallH;
 
@@ -422,32 +448,62 @@ void buildStaticWallBuffer()
         float uD = seg.depth;
         float vH = wallH;
 
-		// Fata dinspre camera (Z+)
-        addVertex(x0, y0, z1, 0.0f, 0.0f, 0, 0, 1); addVertex(x1, y0, z1, uW, 0.0f, 0, 0, 1); addVertex(x1, y1, z1, uW, vH, 0, 0, 1);
-        addVertex(x0, y0, z1, 0.0f, 0.0f, 0, 0, 1); addVertex(x1, y1, z1, uW, vH, 0, 0, 1); addVertex(x0, y1, z1, 0.0f, vH, 0, 0, 1);
+        // Fata dinspre camera (Z+)
+        addVertex(x0, y0, z1, 0.0f, 0.0f, 0, 0, 1, 1, 0, 0);
+        addVertex(x1, y0, z1, uW, 0.0f, 0, 0, 1, 1, 0, 0);
+        addVertex(x1, y1, z1, uW, vH, 0, 0, 1, 1, 0, 0);
 
-		// Fata din spate (Z-)
-        addVertex(x1, y0, z0, 0.0f, 0.0f, 0, 0, -1); addVertex(x0, y0, z0, uW, 0.0f, 0, 0, -1); addVertex(x0, y1, z0, uW, vH, 0, 0, -1);
-        addVertex(x1, y0, z0, 0.0f, 0.0f, 0, 0, -1); addVertex(x0, y1, z0, uW, vH, 0, 0, -1); addVertex(x1, y1, z0, 0.0f, vH, 0, 0, -1);
+        addVertex(x0, y0, z1, 0.0f, 0.0f, 0, 0, 1, 1, 0, 0);
+        addVertex(x1, y1, z1, uW, vH, 0, 0, 1, 1, 0, 0);
+        addVertex(x0, y1, z1, 0.0f, vH, 0, 0, 1, 1, 0, 0);
 
-		// Fata din stanga (X-)
-        addVertex(x0, y0, z0, 0.0f, 0.0f, -1, 0, 0); addVertex(x0, y0, z1, uD, 0.0f, -1, 0, 0); addVertex(x0, y1, z1, uD, vH, -1, 0, 0);
-        addVertex(x0, y0, z0, 0.0f, 0.0f, -1, 0, 0); addVertex(x0, y1, z1, uD, vH, -1, 0, 0); addVertex(x0, y1, z0, 0.0f, vH, -1, 0, 0);
+        // Fata din spate (Z-)
+        addVertex(x1, y0, z0, 0.0f, 0.0f, 0, 0, -1, -1, 0, 0);
+        addVertex(x0, y0, z0, uW, 0.0f, 0, 0, -1, -1, 0, 0);
+        addVertex(x0, y1, z0, uW, vH, 0, 0, -1, -1, 0, 0);
 
-		// Fata din dreapta (X+)
-        addVertex(x1, y0, z1, 0.0f, 0.0f, 1, 0, 0); addVertex(x1, y0, z0, uD, 0.0f, 1, 0, 0); addVertex(x1, y1, z0, uD, vH, 1, 0, 0);
-        addVertex(x1, y0, z1, 0.0f, 0.0f, 1, 0, 0); addVertex(x1, y1, z0, uD, vH, 1, 0, 0); addVertex(x1, y1, z1, 0.0f, vH, 1, 0, 0);
+        addVertex(x1, y0, z0, 0.0f, 0.0f, 0, 0, -1, -1, 0, 0);
+        addVertex(x0, y1, z0, uW, vH, 0, 0, -1, -1, 0, 0);
+        addVertex(x1, y1, z0, 0.0f, vH, 0, 0, -1, -1, 0, 0);
 
-		// Fata de sus (Y+)
-        addVertex(x0, y1, z1, 0.0f, uD, 0, 1, 0); addVertex(x1, y1, z1, uW, uD, 0, 1, 0); addVertex(x1, y1, z0, uW, 0.0f, 0, 1, 0);
-        addVertex(x0, y1, z1, 0.0f, uD, 0, 1, 0); addVertex(x1, y1, z0, uW, 0.0f, 0, 1, 0); addVertex(x0, y1, z0, 0.0f, 0.0f, 0, 1, 0);
+        // Fata din stanga (X-)
+        addVertex(x0, y0, z0, 0.0f, 0.0f, -1, 0, 0, 0, 0, 1);
+        addVertex(x0, y0, z1, uD, 0.0f, -1, 0, 0, 0, 0, 1);
+        addVertex(x0, y1, z1, uD, vH, -1, 0, 0, 0, 0, 1);
 
-		// Fata de jos (Y-)
-        addVertex(x0, y0, z0, 0.0f, uD, 0, -1, 0); addVertex(x1, y0, z0, uW, uD, 0, -1, 0); addVertex(x1, y0, z1, uW, 0.0f, 0, -1, 0);
-        addVertex(x0, y0, z0, 0.0f, uD, 0, -1, 0); addVertex(x1, y0, z1, uW, 0.0f, 0, -1, 0); addVertex(x0, y0, z1, 0.0f, 0.0f, 0, -1, 0);
+        addVertex(x0, y0, z0, 0.0f, 0.0f, -1, 0, 0, 0, 0, 1);
+        addVertex(x0, y1, z1, uD, vH, -1, 0, 0, 0, 0, 1);
+        addVertex(x0, y1, z0, 0.0f, vH, -1, 0, 0, 0, 0, 1);
+
+        // Fata din dreapta (X+)
+        addVertex(x1, y0, z1, 0.0f, 0.0f, 1, 0, 0, 0, 0, -1);
+        addVertex(x1, y0, z0, uD, 0.0f, 1, 0, 0, 0, 0, -1);
+        addVertex(x1, y1, z0, uD, vH, 1, 0, 0, 0, 0, -1);
+
+        addVertex(x1, y0, z1, 0.0f, 0.0f, 1, 0, 0, 0, 0, -1);
+        addVertex(x1, y1, z0, uD, vH, 1, 0, 0, 0, 0, -1);
+        addVertex(x1, y1, z1, 0.0f, vH, 1, 0, 0, 0, 0, -1);
+
+        // Fata de sus (Y+)
+        addVertex(x0, y1, z1, 0.0f, uD, 0, 1, 0, 1, 0, 0);
+        addVertex(x1, y1, z1, uW, uD, 0, 1, 0, 1, 0, 0);
+        addVertex(x1, y1, z0, uW, 0.0f, 0, 1, 0, 1, 0, 0);
+
+        addVertex(x0, y1, z1, 0.0f, uD, 0, 1, 0, 1, 0, 0);
+        addVertex(x1, y1, z0, uW, 0.0f, 0, 1, 0, 1, 0, 0);
+        addVertex(x0, y1, z0, 0.0f, 0.0f, 0, 1, 0, 1, 0, 0);
+
+        // Fata de jos (Y-)
+        addVertex(x0, y0, z0, 0.0f, uD, 0, -1, 0, 1, 0, 0);
+        addVertex(x1, y0, z0, uW, uD, 0, -1, 0, 1, 0, 0);
+        addVertex(x1, y0, z1, uW, 0.0f, 0, -1, 0, 1, 0, 0);
+
+        addVertex(x0, y0, z0, 0.0f, uD, 0, -1, 0, 1, 0, 0);
+        addVertex(x1, y0, z1, uW, 0.0f, 0, -1, 0, 1, 0, 0);
+        addVertex(x0, y0, z1, 0.0f, 0.0f, 0, -1, 0, 1, 0, 0);
     }
 
-	// Dupa ce am generat toti vertexii pentru toate segmentele, ii incarcam o data in buffer
+    // Dupa ce am generat toti vertexii pentru toate segmentele, ii incarcam o data in buffer
     glBindVertexArray(wallBoxVao);
     glBindBuffer(GL_ARRAY_BUFFER, wallBoxVbo);
     glBufferData(GL_ARRAY_BUFFER, allWallVertices.size() * sizeof(Vertex), allWallVertices.data(), GL_STATIC_DRAW);
@@ -460,9 +516,13 @@ void buildStaticWallBuffer()
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, texCoord));
 
-	// Normalele
+    // Normalele
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
+
+    // Tangent
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, tangent));
 
     glBindVertexArray(0);
 }
@@ -494,9 +554,9 @@ void loadWallTexture()
     stbi_set_flip_vertically_on_load(true);
 
     int width, height, nrChannels;
-    unsigned char* data = stbi_load("img/Wall.png", &width, &height, &nrChannels, 0);
+    unsigned char* data = stbi_load("img/Wall.jpg", &width, &height, &nrChannels, 0);
 
-    if (data) 
+    if (data)
     {
         GLenum format = (nrChannels == 4) ? GL_RGBA : GL_RGB;
         glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
@@ -504,7 +564,7 @@ void loadWallTexture()
         glGenerateMipmap(GL_TEXTURE_2D);
         printf("Wall texture loaded: %dx%d, %d channels\n", width, height, nrChannels);
     }
-    else 
+    else
     {
         printf("ERROR: Failed to load texture!\n");
     }
@@ -605,7 +665,7 @@ void renderScene(const ShaderUniforms& u)
     if (u.modelLoc != -1) glUniformMatrix4fv(u.modelLoc, 1, GL_FALSE, glm::value_ptr(modelMatrix));
     if (u.normalLoc != -1) glUniformMatrix4fv(u.normalLoc, 1, GL_FALSE, glm::value_ptr(glm::mat4(1.0f)));
 
-	// Peretii
+    // Peretii
     glBindVertexArray(wallBoxVao);
     glDrawArrays(GL_TRIANGLES, 0, (GLsizei)allWallVertices.size());
 
@@ -631,9 +691,9 @@ void renderScene(const ShaderUniforms& u)
     if (u.colorLoc != -1) glUniform3f(u.colorLoc, 1.0f, 0.72f, 0.67f);
 
     glBindVertexArray(sphereVao);
-    for (int r = 0; r < MAZE_HEIGHT; r++) 
+    for (int r = 0; r < MAZE_HEIGHT; r++)
     {
-        for (int c = 0; c < MAZE_WIDTH; c++) 
+        for (int c = 0; c < MAZE_WIDTH; c++)
         {
             if (pellets[r][c]) {
                 modelMatrix = glm::translate(glm::vec3((float)c, -0.3f, (float)r));
@@ -650,7 +710,7 @@ void renderScene(const ShaderUniforms& u)
 
     // Fantome
     glBindVertexArray(ghostVao);
-    for (const auto& g : ghosts) 
+    for (const auto& g : ghosts)
     {
         if (u.colorLoc != -1) glUniform3fv(u.colorLoc, 1, glm::value_ptr(g.color));
 
@@ -690,7 +750,7 @@ void display()
     float deltaTime = currentFrameTime - lastFrameTime;
     lastFrameTime = currentFrameTime;
 
-	// Minimizarea deltaTime pentru a evita probleme de fizica)
+    // Minimizarea deltaTime pentru a evita probleme de fizica)
     if (deltaTime > 0.1f) deltaTime = 0.1f;
 
     if (!isGameOver)
@@ -799,6 +859,10 @@ void display()
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, wallTexture);
 
+    // Normal map pentru pereti
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, wallNormalMap);
+
     // Depth map
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, depthMap);
@@ -806,8 +870,8 @@ void display()
     // Desenam toate obiectele normal
     renderScene(lightUniforms);
 
-	// Cubemap pentru skybox
-	// Desenam skybox-ul ultimul, in spate la toate
+    // Cubemap pentru skybox
+    // Desenam skybox-ul ultimul, in spate la toate
     glDepthFunc(GL_LEQUAL);
     glUseProgram(skyboxShaderProg);
 
@@ -824,7 +888,7 @@ void display()
     // Resetam functia de adancime
     glDepthFunc(GL_LESS);
 
-	// Afisare text de Game Over
+    // Afisare text de Game Over
     if (isGameOver)
     {
         renderText2D(-0.15f, 0.1f, GLUT_BITMAP_TIMES_ROMAN_24, "GAME OVER", glm::vec3(1.0f, 0.0f, 0.0f));
@@ -918,6 +982,7 @@ void init()
     buildStaticWallBuffer();
 
     loadWallTexture();
+    loadNormalMap();
 
     printf("Wall draw calls reduced from %d worst case to %d total\n", MAZE_HEIGHT * MAZE_WIDTH, (int)wallSegments.size());
 
@@ -958,7 +1023,7 @@ void init()
     glLinkProgram(shader_programme);
     glLinkProgram(depth_shader_programme);
 
-	// Cache pentru shaderul de iluminare
+    // Cache pentru shaderul de iluminare
     lightUniforms.mvpLoc = glGetUniformLocation(shader_programme, "mvpMatrix");
     lightUniforms.modelLoc = glGetUniformLocation(shader_programme, "modelMatrix");
     lightUniforms.normalLoc = glGetUniformLocation(shader_programme, "normalMatrix");
@@ -971,8 +1036,9 @@ void init()
     lightUniforms.viewPosLoc = glGetUniformLocation(shader_programme, "viewPos");
     lightUniforms.textureLoc = glGetUniformLocation(shader_programme, "wallTexture");
     lightUniforms.shadowMapLoc = glGetUniformLocation(shader_programme, "shadowMap");
+    lightUniforms.normalMapLoc = glGetUniformLocation(shader_programme, "normalMap");
 
-	// Cache pentru shaderul de depth
+    // Cache pentru shaderul de depth
     depthUniforms.mvpLoc = glGetUniformLocation(depth_shader_programme, "mvpMatrix");
     depthUniforms.modelLoc = glGetUniformLocation(depth_shader_programme, "modelMatrix");
     depthUniforms.normalLoc = glGetUniformLocation(depth_shader_programme, "normalMatrix");
@@ -983,11 +1049,14 @@ void init()
     depthUniforms.lightSpaceLoc = glGetUniformLocation(depth_shader_programme, "lightSpaceMatrix");
 
     glUseProgram(shader_programme);
+
     glUniform1i(lightUniforms.textureLoc, 0);
+    glUniform1i(lightUniforms.normalMapLoc, 2);
     glUniform1i(lightUniforms.shadowMapLoc, 1);
+
     glUniform3fv(lightUniforms.lightPosLoc, 1, glm::value_ptr(lightPos));
 
-	// Initializare skybox
+    // Initializare skybox
     float skyboxVertices[] = {
         -1.0f,  1.0f, -1.0f,
         -1.0f, -1.0f, -1.0f,
@@ -1083,10 +1152,10 @@ void reshape(int w, int h)
     projectionMatrix = glm::perspective(PI / 4, (float)w / h, 0.1f, 100.0f);
 }
 
-void keyboard(unsigned char key, int x, int y) 
+void keyboard(unsigned char key, int x, int y)
 {
 
-    if (key == 'r' || key == 'R') 
+    if (key == 'r' || key == 'R')
     {
         restartGame();
         glutPostRedisplay();
