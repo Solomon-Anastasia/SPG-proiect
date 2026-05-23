@@ -17,6 +17,7 @@ uniform vec3 objectColor;
 
 uniform bool useLighting;
 uniform bool useTexture;
+uniform bool useNormalMapping;
 
 uniform sampler2D wallTexture;
 uniform sampler2D normalMap;
@@ -88,7 +89,7 @@ void main()
     }
 
     vec3 N;
-    if (useTexture) 
+    if (useTexture && useNormalMapping) 
     {
         N = texture(normalMap, TexCoord).rgb;
         N = N * 2.0 - 1.0; 
@@ -103,8 +104,8 @@ void main()
         N = normalize(normal);
     }
 
-    vec3 lightDir = useTexture ? normalize(TangentLightPos - TangentFragPos) : normalize(lightPos - pos);
-    vec3 viewDir  = useTexture ? normalize(TangentViewPos - TangentFragPos) : normalize(viewPos - pos);
+    vec3 lightDir = (useTexture && useNormalMapping) ? normalize(TangentLightPos - TangentFragPos) : normalize(lightPos - pos);
+    vec3 viewDir  = (useTexture && useNormalMapping) ? normalize(TangentViewPos - TangentFragPos) : normalize(viewPos - pos);
 
     // Ambient
     vec3 ambientComponent = vec3(0.25) * baseColor;

@@ -52,6 +52,7 @@ GLuint skyboxShaderProg;
 GLuint skyboxVAO, skyboxVBO;
 GLuint cubemapTexture;
 GLuint wallNormalMap;
+bool enableNormalMapping = true;
 
 GLint skyboxProjLoc, skyboxViewLoc, skyboxTexLoc;
 
@@ -149,6 +150,8 @@ struct ShaderUniforms {
     GLint colorLoc = -1;
     GLint useLightLoc = -1;
     GLint useTexLoc = -1;
+
+    GLint useNormalMappingLoc = -1;
 
     GLint lightSpaceLoc = -1;
     GLint lightPosLoc = -1;
@@ -855,6 +858,11 @@ void display()
 
     glUniformMatrix4fv(lightUniforms.lightSpaceLoc, 1, GL_FALSE, glm::value_ptr(lightSpaceMatrix));
 
+    if (lightUniforms.useNormalMappingLoc != -1)
+    {
+        glUniform1i(lightUniforms.useNormalMappingLoc, enableNormalMapping ? 1 : 0);
+    }
+    
     // Textura peretilor 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, wallTexture);
@@ -1031,6 +1039,8 @@ void init()
     lightUniforms.useLightLoc = glGetUniformLocation(shader_programme, "useLighting");
     lightUniforms.useTexLoc = glGetUniformLocation(shader_programme, "useTexture");
 
+    lightUniforms.useNormalMappingLoc = glGetUniformLocation(shader_programme, "useNormalMapping");
+
     lightUniforms.lightSpaceLoc = glGetUniformLocation(shader_programme, "lightSpaceMatrix");
     lightUniforms.lightPosLoc = glGetUniformLocation(shader_programme, "lightPos");
     lightUniforms.viewPosLoc = glGetUniformLocation(shader_programme, "viewPos");
@@ -1171,6 +1181,12 @@ void keyboard(unsigned char key, int x, int y)
     float nextZ = targetZ;
 
     switch (key) {
+    case 'n':
+    case 'N':
+        enableNormalMapping = !enableNormalMapping;
+        printf("Normal Mapping: %s\n", enableNormalMapping ? "ON" : "OFF");
+        glutPostRedisplay();
+        return;
         // Pentru a si d nu se misca lateral, ci sa se intoarca la 90 de grade stanga/dreapta,
         // nu este nevoie de determinarea coliziunii
     case 'a':
