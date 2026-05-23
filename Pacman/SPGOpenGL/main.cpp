@@ -834,6 +834,7 @@ void display()
         float camDiff = cameraTarget - cameraAngle;
         while (camDiff > PI) camDiff -= 2.0f * PI;
         while (camDiff < -PI) camDiff += 2.0f * PI;
+
         cameraAngle += camDiff * rotationFactor;
     }
 
@@ -1306,12 +1307,26 @@ void keyboard(unsigned char key, int x, int y)
     float nextX = targetX;
     float nextZ = targetZ;
 
-    switch (key) {
+    // --- NEW CAMERA-RELATIVE MATH ---
+    // 1. Get the camera's actual view angle including the mouse drag
+    float finalCamAngle = cameraAngle + cameraOrbit;
+
+    // 2. "Up" on the screen is the direction pointing AWAY from the camera
+    float screenUpAngle = finalCamAngle + PI;
+
+    // 3. Snap that angle to the nearest 90 degrees (PI / 2) to keep Pac-Man on the grid
+    float step = PI / 2.0f;
+    float snappedUp = round(screenUpAngle / step) * step;
+
+    switch (key) 
+    {
+        // Fullscreen
     case 'f':
     case 'F':
         glutFullScreenToggle();
-        printf("Fullscreen mode\n");
+        printf("Fullscreen mode activated!\n");
         return;
+
         // Pentru testare
     case 'k':
     case 'K':
@@ -1356,25 +1371,45 @@ void keyboard(unsigned char key, int x, int y)
         // Pentru a si d nu se misca lateral, ci sa se intoarca la 90 de grade stanga/dreapta,
         // nu este nevoie de determinarea coliziunii
     case 'a':
-        targetAngle += PI / 2.0f;
-        cameraTarget = targetAngle + PI;
-        glutPostRedisplay();
-        return;
+    case 'A':
+        targetAngle += PI / 2.0f; // Turn 90 degrees Left
+        break;
+
     case 'd':
-        targetAngle -= PI / 2.0f;
-        cameraTarget = targetAngle + PI;
-        glutPostRedisplay();
-        return;
+    case 'D':
+        targetAngle -= PI / 2.0f; // Turn 90 degrees Right
+        break;
+
     case 'w':
+    case 'W':
         nextX += sin(targetAngle);
-        nextZ += cos(targetAngle);
+        nextZ += cos(targetAngle); // Walk Forward
         break;
+
     case 's':
+    case 'S':
         nextX -= sin(targetAngle);
-        nextZ -= cos(targetAngle);
+        nextZ -= cos(targetAngle); // Walk Backward
         break;
+
     case 27:
         exit(0); // ESC key
+    }
+
+    if (key == 'w' || key == 's' || key == 'a' || key == 'd' ||
+        key == 'W' || key == 'S' || key == 'A' || key == 'D')
+    {
+        // 1. Bake the current mouse drag into the actual camera angle
+        // This gives the transition a smooth starting point.
+        cameraAngle += cameraOrbit;
+        cameraOrbit = 0.0f;
+
+        // 2. Set the target directly behind Pac-Man's new direction
+        cameraTarget = targetAngle + PI;
+
+        // 3. Normalize the angles so the camera doesn't spin 360 degrees the long way around!
+        while (cameraTarget - cameraAngle > PI) cameraTarget -= 2.0f * PI;
+        while (cameraTarget - cameraAngle < -PI) cameraTarget += 2.0f * PI;
     }
 
     int gridX = (int)(nextX + 0.5f);
