@@ -47,12 +47,20 @@ GLuint depthMap;
 const unsigned int SHADOW_WIDTH = 2048, SHADOW_HEIGHT = 2048; // Rezolutia
 GLuint depth_shader_programme; // Avem nevoie de un shader separat pentru a desena in depth map
 
+// Pentru halo
+GLuint haloShaderProg;
+GLuint haloVao, haloVbo;
+GLint haloProjLoc, haloViewLoc, haloCenterLoc, haloSizeLoc, haloColorLoc;
+
 // Cubemap
 GLuint skyboxShaderProg;
 GLuint skyboxVAO, skyboxVBO;
 GLuint cubemapTexture;
 GLuint wallNormalMap;
+
 bool enableNormalMapping = true;
+bool enableGlow = true;
+bool enableShadows = true;
 
 GLint skyboxProjLoc, skyboxViewLoc, skyboxTexLoc;
 
@@ -152,6 +160,7 @@ struct ShaderUniforms {
     GLint useTexLoc = -1;
 
     GLint useNormalMappingLoc = -1;
+    GLint useShadowsLoc = -1;
 
     GLint lightSpaceLoc = -1;
     GLint lightPosLoc = -1;
@@ -691,7 +700,7 @@ void renderScene(const ShaderUniforms& u)
 
     // Pellet
     if (u.useLightLoc != -1) glUniform1i(u.useLightLoc, 1);
-    if (u.colorLoc != -1) glUniform3f(u.colorLoc, 1.0f, 0.72f, 0.67f);
+    if (u.colorLoc != -1) glUniform3f(u.colorLoc, 1.0f, 1.0f, 1.0f);
 
     glBindVertexArray(sphereVao);
     for (int r = 0; r < MAZE_HEIGHT; r++)
@@ -835,17 +844,20 @@ void display()
     glm::mat4 lightView = glm::lookAt(lightPos, glm::vec3(MAZE_WIDTH / 2.0f, 0.0f, MAZE_HEIGHT / 2.0f), glm::vec3(0.0, 1.0, 0.0));
     glm::mat4 lightSpaceMatrix = lightProjection * lightView;
 
-    // Randare in depth map
-    glUseProgram(depth_shader_programme);
-    glUniformMatrix4fv(depthUniforms.lightSpaceLoc, 1, GL_FALSE, glm::value_ptr(lightSpaceMatrix));
+    if (enableShadows)
+    {
+        // Randare in depth map
+        glUseProgram(depth_shader_programme);
+        glUniformMatrix4fv(depthUniforms.lightSpaceLoc, 1, GL_FALSE, glm::value_ptr(lightSpaceMatrix));
 
-    glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
-    glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
-    glClear(GL_DEPTH_BUFFER_BIT);
+        glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+        glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+        glClear(GL_DEPTH_BUFFER_BIT);
 
-    // Desenam toate obiectele pentru depth buffer
-    renderScene(depthUniforms);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        // Desenam toate obiectele pentru depth buffer
+        renderScene(depthUniforms);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
 
     // Randam scena finala
     glUseProgram(shader_programme);
@@ -861,6 +873,11 @@ void display()
     if (lightUniforms.useNormalMappingLoc != -1)
     {
         glUniform1i(lightUniforms.useNormalMappingLoc, enableNormalMapping ? 1 : 0);
+    }
+
+    if (lightUniforms.useShadowsLoc != -1)
+    {
+        glUniform1i(lightUniforms.useShadowsLoc, enableShadows ? 1 : 0);
     }
     
     // Textura peretilor 
@@ -895,6 +912,41 @@ void display()
 
     // Resetam functia de adancime
     glDepthFunc(GL_LESS);
+
+    if (enableGlow)
+    {
+        glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE); // Adaugam culorile pentru un efect de glow mai puternic
+
+        glUseProgram(haloShaderProg);
+        glUniformMatrix4fv(haloProjLoc, 1, GL_FALSE, glm::value_ptr(projectionMatrix));
+        glUniformMatrix4fv(haloViewLoc, 1, GL_FALSE, glm::value_ptr(viewMatrix));
+
+        glUniform3f(haloColorLoc, 1.0f, 1.0f, 1.0f);
+        glUniform1f(haloSizeLoc, 0.21f);
+
+        glBindVertexArray(haloVao);
+
+		// Pentru fiecare pellet activ, desenam halo
+        for (int r = 0; r < MAZE_HEIGHT; r++)
+        {
+            for (int c = 0; c < MAZE_WIDTH; c++)
+            {
+                if (pellets[r][c]) 
+                {
+                    glm::vec3 center = glm::vec3((float)c, -0.3f, (float)r);
+                    glUniform3fv(haloCenterLoc, 1, glm::value_ptr(center));
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                }
+            }
+        }
+        glBindVertexArray(0);
+
+		// Resetam starea pentru a nu afecta restul obiectelor
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
 
     // Afisare text de Game Over
     if (isGameOver)
@@ -994,6 +1046,51 @@ void init()
 
     printf("Wall draw calls reduced from %d worst case to %d total\n", MAZE_HEIGHT * MAZE_WIDTH, (int)wallSegments.size());
 
+	// Patrat pentru halo
+    float squareVertices[] = 
+    {
+        -1.0f, -1.0f,
+        1.0f, -1.0f,
+        1.0f,  1.0f,
+        -1.0f, -1.0f,
+        1.0f,  1.0f,
+        -1.0f,  1.0f
+    };
+
+    glGenVertexArrays(1, &haloVao);
+    glGenBuffers(1, &haloVbo);
+    glBindVertexArray(haloVao);
+    glBindBuffer(GL_ARRAY_BUFFER, haloVbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(squareVertices), &squareVertices, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+    glBindVertexArray(0);
+
+    std::string vsHaloText = textFileRead("halo.vert");
+    std::string fsHaloText = textFileRead("halo.frag");
+    const char* haloVertex_shader = vsHaloText.c_str();
+    const char* haloFragment_shader = fsHaloText.c_str();
+
+    GLuint vsHalo = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vsHalo, 1, &haloVertex_shader, NULL);
+    glCompileShader(vsHalo);
+
+    GLuint fsHalo = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fsHalo, 1, &haloFragment_shader, NULL);
+    glCompileShader(fsHalo);
+
+    haloShaderProg = glCreateProgram();
+    glAttachShader(haloShaderProg, vsHalo);
+    glAttachShader(haloShaderProg, fsHalo);
+    glLinkProgram(haloShaderProg);
+
+	// Cache pentru shaderul de halo
+    haloProjLoc = glGetUniformLocation(haloShaderProg, "projection");
+    haloViewLoc = glGetUniformLocation(haloShaderProg, "view");
+    haloCenterLoc = glGetUniformLocation(haloShaderProg, "centerPos");
+    haloSizeLoc = glGetUniformLocation(haloShaderProg, "size");
+    haloColorLoc = glGetUniformLocation(haloShaderProg, "haloColor");
+
     restartGame();
 
     std::string vsLightText = textFileRead("pixel_light.vert");
@@ -1039,14 +1136,15 @@ void init()
     lightUniforms.useLightLoc = glGetUniformLocation(shader_programme, "useLighting");
     lightUniforms.useTexLoc = glGetUniformLocation(shader_programme, "useTexture");
 
-    lightUniforms.useNormalMappingLoc = glGetUniformLocation(shader_programme, "useNormalMapping");
-
     lightUniforms.lightSpaceLoc = glGetUniformLocation(shader_programme, "lightSpaceMatrix");
     lightUniforms.lightPosLoc = glGetUniformLocation(shader_programme, "lightPos");
     lightUniforms.viewPosLoc = glGetUniformLocation(shader_programme, "viewPos");
     lightUniforms.textureLoc = glGetUniformLocation(shader_programme, "wallTexture");
     lightUniforms.shadowMapLoc = glGetUniformLocation(shader_programme, "shadowMap");
     lightUniforms.normalMapLoc = glGetUniformLocation(shader_programme, "normalMap");
+
+    lightUniforms.useNormalMappingLoc = glGetUniformLocation(shader_programme, "useNormalMapping");
+    lightUniforms.useShadowsLoc = glGetUniformLocation(shader_programme, "useShadows");
 
     // Cache pentru shaderul de depth
     depthUniforms.mvpLoc = glGetUniformLocation(depth_shader_programme, "mvpMatrix");
@@ -1181,12 +1279,25 @@ void keyboard(unsigned char key, int x, int y)
     float nextZ = targetZ;
 
     switch (key) {
+    case 'g':
+    case 'G':
+        enableGlow = !enableGlow;
+        printf("Glow effect: %s\n", enableGlow ? "ON" : "OFF");
+        glutPostRedisplay();
+        return;
+    case 'm':
+    case 'M':
+        enableShadows = !enableShadows;
+        printf("Shadows: %s\n", enableShadows ? "ON" : "OFF");
+        glutPostRedisplay();
+        return;
     case 'n':
     case 'N':
         enableNormalMapping = !enableNormalMapping;
-        printf("Normal Mapping: %s\n", enableNormalMapping ? "ON" : "OFF");
+        printf("Normal mapping: %s\n", enableNormalMapping ? "ON" : "OFF");
         glutPostRedisplay();
         return;
+
         // Pentru a si d nu se misca lateral, ci sa se intoarca la 90 de grade stanga/dreapta,
         // nu este nevoie de determinarea coliziunii
     case 'a':

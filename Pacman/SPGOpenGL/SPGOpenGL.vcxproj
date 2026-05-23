@@ -123,6 +123,8 @@
   <ItemGroup>
     <None Include="depth.frag" />
     <None Include="depth.vert" />
+    <None Include="halo.frag" />
+    <None Include="halo.vert" />
     <None Include="pixel_light.frag" />
     <None Include="pixel_light.vert" />
     <None Include="skybox.frag" />

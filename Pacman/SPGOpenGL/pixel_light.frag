@@ -18,12 +18,11 @@ uniform vec3 objectColor;
 uniform bool useLighting;
 uniform bool useTexture;
 uniform bool useNormalMapping;
+uniform bool useShadows;
 
 uniform sampler2D wallTexture;
 uniform sampler2D normalMap;
 uniform sampler2D shadowMap;
-
-
 
 float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) 
 {
@@ -34,8 +33,8 @@ float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir)
 
     float currentDepth = projCoords.z;
     float bias = max(0.05 * (1.0 - dot(normal, lightDir)), 0.005);
-
-    // Reduced PCF: Only 4 samples instead of 9
+    
+    // PCF (Percentage Closer Filtering) pentru a reduce aliasing-ul umbrilor
     float shadow = 0.0;
     vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
     for(int x = 0; x <= 1; ++x) 
@@ -114,6 +113,7 @@ void main()
     float dotLN = max(dot(N, lightDir), 0.0);
     vec3 diffuseMain = vec3(0.8) * dotLN * baseColor;
     
+    // Specular pentru lumina principala, amplificat pentru a fi vizibil chiar si pe pereti texturati
     vec3 R1 = reflect(-lightDir, N);
     float spec1 = pow(max(dot(R1, viewDir), 0.0), 32.0);
     vec3 specularMain = vec3(0.3) * spec1;
@@ -129,22 +129,18 @@ void main()
         float headlampDot = max(dot(N, headlampDir), 0.0);
         vec3 R2 = reflect(-headlampDir, N);
 
-        // Raised to 32.0 for a tighter, sharper shine
         float spec2 = pow(max(dot(R2, viewDir), 0.0), 32.0); 
         
         diffuseHeadlamp = vec3(0.1) * headlampDot * baseColor;
-        
-        // Raised from 0.1 to 0.35 to bring back the specular highlight
         specularHeadlamp = vec3(0.25) * spec2;               
     }
 
     // Umbra pentru lumina principala
     vec3 worldNormal = normalize(normal);
     vec3 worldLightDir = normalize(lightPos - pos);
-    float shadow = ShadowCalculation(FragPosLightSpace, worldNormal, worldLightDir);
+    float shadow = useShadows ? ShadowCalculation(FragPosLightSpace, worldNormal, worldLightDir) : 0.0;
 
     // Aplicam umbra doar la lumina principala
-    // Shadows ONLY affect the Main Light. The Headlamp ignores shadows so the bumps are always visible!
     vec3 mainLightFinal = (1.0 - shadow) * (diffuseMain + specularMain);
     vec3 finalColor = ambientComponent + mainLightFinal + diffuseHeadlamp + specularHeadlamp;
     
