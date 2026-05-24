@@ -1,4 +1,4 @@
 ﻿  main.cpp
 C:\Users\Naste\Desktop\Materii\PROIECT SPG\Pacman\SPGOpenGL\main.cpp(393,15): warning C4244: 'argument': conversion from 'time_t' to 'unsigned int', possible loss of data
-C:\Users\Naste\Desktop\Materii\PROIECT SPG\Pacman\SPGOpenGL\main.cpp(749,57): warning C4267: 'argument': conversion from 'size_t' to 'GLsizei', possible loss of data
+C:\Users\Naste\Desktop\Materii\PROIECT SPG\Pacman\SPGOpenGL\main.cpp(706,57): warning C4267: 'argument': conversion from 'size_t' to 'GLsizei', possible loss of data
   SPGOpenGL.vcxproj -> C:\Users\Naste\Desktop\Materii\PROIECT SPG\Pacman\x64\Debug\SPGOpenGL.exe

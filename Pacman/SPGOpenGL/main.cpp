@@ -78,7 +78,7 @@ float deltaTime = 0.0f;
 
 // Pentru controlul camerei cu mouse-ul
 int lastMouseX = -1;
-float cameraOrbit = 0.0f; // Cat de mult s-a invartit camera in jurul lui pacman
+float cameraMouseRotation = 0.0f; // Cat de mult s-a invartit camera in jurul lui pacman
 bool mouseDown = false;
 
 // Starea jocului
@@ -460,8 +460,7 @@ GLuint loadCubemap(std::vector<std::string> faces)
         if (data)
         {
             GLenum format = (nrChannels == 4) ? GL_RGBA : GL_RGB;
-            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
-                0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
             stbi_image_free(data);
         }
         else
@@ -472,6 +471,7 @@ GLuint loadCubemap(std::vector<std::string> faces)
     }
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
@@ -482,12 +482,13 @@ GLuint loadCubemap(std::vector<std::string> faces)
 void initGhosts()
 {
     ghosts.clear();
+
     glm::vec3 colors[] =
     {
-        glm::vec3(1.0f, 0.0f, 0.0f), // Blinky (top sus)
-        glm::vec3(1.0f, 0.7f, 0.8f), // Pinky (top dreapta)
-        glm::vec3(0.0f, 1.0f, 1.0f), // Inky (stanga jos)
-        glm::vec3(1.0f, 0.5f, 0.0f)  // Clyde (stanga sus)
+        glm::vec3(1.0f, 0.0f, 0.0f), // Blinky (rosu)
+		glm::vec3(1.0f, 0.7f, 0.8f), // Pinky (roz)
+		glm::vec3(0.0f, 1.0f, 1.0f), // Inky (cyan)
+		glm::vec3(1.0f, 0.5f, 0.0f)  // Clyde (portocaliu)
     };
 
     std::vector<std::vector<glm::ivec2>> routes =
@@ -501,6 +502,7 @@ void initGhosts()
     for (int i = 0; i < 4; i++)
     {
         Ghost g;
+
         g.route = routes[i];
         g.routeIndex = 0;
 
@@ -525,25 +527,30 @@ void updateGhosts(float dt)
         // Calculam distanta pana la tinta curenta
         float dx = g.targetX - g.x;
         float dz = g.targetZ - g.z;
-        float dist = std::sqrt(dx * dx + dz * dz);
+        
+        float dist = glm::distance(glm::vec2(g.x, g.z), glm::vec2(g.targetX, g.targetZ));
 
         // Daca distanta e semnificativa, continuam sa ne miscam catre tinta
         if (dist > 0.001f)
         {
+            // Miscare independenta de fps
             float step = g.speed * 60.0f * dt;
 
             if (step > dist) step = dist;
 
+            // Viteza de miscare normalizata, indiferent de directie
             g.x += (dx / dist) * step;
             g.z += (dz / dist) * step;
         }
 
         // Lerp unghiular pentru a face intoarcerile mai fluide
         float angleDiff = g.targetAngle - g.currentAngle;
-        while (angleDiff > PI) angleDiff -= 2.0f * PI;
-        while (angleDiff < -PI) angleDiff += 2.0f * PI;
 
-        g.currentAngle += angleDiff * (10.0f * dt);
+        if (angleDiff > PI) angleDiff -= 2.0f * PI;
+        if (angleDiff < -PI) angleDiff += 2.0f * PI;
+
+		float rotationSpeed = 10.0f;
+        g.currentAngle += angleDiff * (rotationSpeed * dt);
 
         // Daca am ajuns aproape de tinta, trecem la urmatorul punct din ruta
         if (dist <= 0.01f)
@@ -552,13 +559,14 @@ void updateGhosts(float dt)
             g.z = g.targetZ;
 
             // Avansam in ruta
-            g.routeIndex = (g.routeIndex + 1) % g.route.size();
+			g.routeIndex = (g.routeIndex + 1) % g.route.size(); // Round-robin
             glm::ivec2 nextStep = g.route[g.routeIndex];
 
             g.targetX = (float)nextStep.x;
             g.targetZ = (float)nextStep.y;
 
             // Determinam noua tinta unghiulara bazata pe directia de miscare
+            // +0.5 pentru rotunjire corect
             int roundedX = (int)(g.x + 0.5f);
             int roundedZ = (int)(g.z + 0.5f);
 
@@ -593,7 +601,7 @@ void restartGame()
     targetAngle = PI;
     cameraAngle = PI;
     cameraTarget = PI;
-    cameraOrbit = 0.0f;
+    cameraMouseRotation = 0.0f;
 
     initPellets();
     initGhosts();
@@ -605,7 +613,7 @@ void restartGame()
 
 void checkGameOver()
 {
-    for (auto& g : ghosts)
+	for (auto& g : ghosts) // & pentru a modifica direct in vectorul global
     {
         if (isGameOver)
         {
@@ -643,9 +651,12 @@ void renderScene(const ShaderUniforms& u)
     if (u.colorLoc != -1) glUniform3f(u.colorLoc, 0.25f, 0.25f, 0.4f);
 
     glBindVertexArray(cubeVao);
+
+	// Centram podeaua in mijlocul labirintului
     float floorCenterX = (MAZE_WIDTH - 1) / 2.0f;
     float floorCenterZ = (MAZE_HEIGHT - 1) / 2.0f;
 
+	// Modelam podeaua ca un cub scalat pe XZ si subtire pe Y
     modelMatrix = glm::translate(glm::vec3(floorCenterX, -0.5f, floorCenterZ));
     modelMatrix = glm::scale(modelMatrix, glm::vec3((float)MAZE_WIDTH, 0.08f, (float)MAZE_HEIGHT));
 
@@ -664,7 +675,8 @@ void renderScene(const ShaderUniforms& u)
     {
         for (int c = 0; c < MAZE_WIDTH; c++)
         {
-            if (pellets[r][c]) {
+            if (pellets[r][c]) 
+            {
                 modelMatrix = glm::translate(glm::vec3((float)c, -0.3f, (float)r));
                 modelMatrix = glm::scale(modelMatrix, glm::vec3(0.1f, 0.1f, 0.1f));
 
@@ -719,7 +731,7 @@ void display()
     float deltaTime = currentFrameTime - lastFrameTime;
     lastFrameTime = currentFrameTime;
 
-    // Minimizarea deltaTime pentru a evita probleme de fizica)
+	// Limitare pentru probleme de minimizare fereastra sau fps mic
     if (deltaTime > 0.1f) deltaTime = 0.1f;
 
     if (!isGameOver && !isGameWon)
@@ -730,11 +742,11 @@ void display()
         pacZ += (targetZ - pacZ) * interpSpeed;
 
         // Consumare pellet
+		// +0.5 pentru a rotunji corect la cel mai apropiat pellet
         int currentGridX = (int)(pacX + 0.5f);
         int currentGridZ = (int)(pacZ + 0.5f);
 
-        // Verificam daca pozitia curenta a lui Pacman corespunde unui pellet si,
-        // daca da, il consumam (il dezactivam)
+        // Verificam daca pozitia curenta a lui Pacman corespunde unui pellet si daca da, il consumam (il dezactivam)
         if (currentGridX >= 0 && currentGridX < MAZE_WIDTH &&
             currentGridZ >= 0 && currentGridZ < MAZE_HEIGHT)
         {
@@ -777,18 +789,17 @@ void display()
             targetX -= MAZE_WIDTH;
         }
 
-        // Logica pentru rotirea lui pacman + camera in directia miscarii
-        // 1D Shortest-Path Lerp
+        // Logica pentru rotirea lui pacman + camera in directia miscarii (lerp)
         float rotationFactor = 10.0f * deltaTime;
 
         float angleDiff = targetAngle - currentAngle;
-        while (angleDiff > PI) angleDiff -= 2.0f * PI;
-        while (angleDiff < -PI) angleDiff += 2.0f * PI;
+        if (angleDiff > PI) angleDiff -= 2.0f * PI;
+        if (angleDiff < -PI) angleDiff += 2.0f * PI;
         currentAngle += angleDiff * rotationFactor;
 
         float camDiff = cameraTarget - cameraAngle;
-        while (camDiff > PI) camDiff -= 2.0f * PI;
-        while (camDiff < -PI) camDiff += 2.0f * PI;
+        if (camDiff > PI) camDiff -= 2.0f * PI;
+        if (camDiff < -PI) camDiff += 2.0f * PI;
 
         cameraAngle += camDiff * rotationFactor;
     }
@@ -796,11 +807,12 @@ void display()
     // Camera in spatele lui pacman
     float distanceBehind = 5.0f;
     float heightAbove = 3.5f;
-    float finalCamAngle = cameraAngle + cameraOrbit;
+    float finalCamAngle = cameraAngle + cameraMouseRotation;
 
-    // Calculam pozitia camerei folosind un offset polar fata de pozitia lui pacman
+    // Calculam pozitia camerei fata de pozitia lui pacman
     float camX = pacX + sin(finalCamAngle) * distanceBehind;
     float camZ = pacZ + cos(finalCamAngle) * distanceBehind;
+
     viewPos = glm::vec3(camX, heightAbove, camZ);
     viewMatrix = glm::lookAt(viewPos, glm::vec3(pacX, 0.3f, pacZ), glm::vec3(0, 1, 0));
 
@@ -845,30 +857,22 @@ void display()
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     glUniform3fv(lightUniforms.viewPosLoc, 1, glm::value_ptr(viewPos));
-
     glUniformMatrix4fv(lightUniforms.lightSpaceLoc, 1, GL_FALSE, glm::value_ptr(lightSpaceMatrix));
 
-    if (lightUniforms.useNormalMappingLoc != -1)
-    {
+    if (lightUniforms.useNormalMappingLoc != -1) 
         glUniform1i(lightUniforms.useNormalMappingLoc, enableNormalMapping ? 1 : 0);
-    }
 
-    if (lightUniforms.useShadowsLoc != -1)
-    {
+    if (lightUniforms.useShadowsLoc != -1) 
         glUniform1i(lightUniforms.useShadowsLoc, enableShadows ? 1 : 0);
-    }
     
-    // Textura peretilor 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, wallTexture);
 
-    // Normal map pentru pereti
-    glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, wallNormalMap);
-
-    // Depth map
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, depthMap);
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, wallNormalMap);
 
     // Desenam toate obiectele normal
     renderScene(lightUniforms);
@@ -894,7 +898,7 @@ void display()
     if (enableGlow)
     {
         glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE); // Adaugam culorile pentru un efect de glow mai puternic
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 
         glUseProgram(haloShaderProg);
         glUniformMatrix4fv(haloProjLoc, 1, GL_FALSE, glm::value_ptr(projectionMatrix));
@@ -914,6 +918,7 @@ void display()
                 {
                     glm::vec3 center = glm::vec3((float)c, -0.3f, (float)r);
                     glUniform3fv(haloCenterLoc, 1, glm::value_ptr(center));
+
                     glDrawArrays(GL_TRIANGLES, 0, 6);
                 }
             }
@@ -956,20 +961,16 @@ void motion(int x, int y)
 {
     if (mouseDown && lastMouseX >= 0)
     {
+		// Sensibilitate pentru rotirea camerei cu mouse-ul
         float delta = (x - lastMouseX) * 0.01f;
-        cameraOrbit += delta;
+        cameraMouseRotation += delta;
         lastMouseX = x;
 
-        // Limitam cameraOrbit intre -PI si PI pentru a evita overflow
-        if (cameraOrbit > PI)
-        {
-            cameraOrbit -= 2.0f * PI;
-        }
+        if (cameraMouseRotation > PI)
+            cameraMouseRotation -= 2.0f * PI;
 
-        if (cameraOrbit < -PI)
-        {
-            cameraOrbit += 2.0f * PI;
-        }
+        if (cameraMouseRotation < -PI)
+            cameraMouseRotation += 2.0f * PI;
     }
 }
 
@@ -990,12 +991,6 @@ void keyboard(unsigned char key, int x, int y)
 
     float nextX = targetX;
     float nextZ = targetZ;
-
-    // Rotunjim la unghiurile pentru a evita problemele de interpolare cand trecem de la +PI la -PI sau invers
-    float finalCamAngle = cameraAngle + cameraOrbit;
-    float screenUpAngle = finalCamAngle + PI;
-    float step = PI / 2.0f;
-    float snappedUp = round(screenUpAngle / step) * step;
 
     switch (key)
     {
@@ -1054,9 +1049,7 @@ void keyboard(unsigned char key, int x, int y)
         targetAngle += PI / 2.0f; // Intoarcem 90 de grade stanga
 
         if (targetAngle > PI)
-        {
             targetAngle -= 2.0f * PI;
-        }
         break;
 
     case 'd':
@@ -1064,9 +1057,7 @@ void keyboard(unsigned char key, int x, int y)
         targetAngle -= PI / 2.0f; // Intoarcem 90 de grade dreapta
 
         if (targetAngle < -PI)
-        {
             targetAngle += 2.0f * PI;
-        }
         break;
 
     case 'w':
@@ -1078,7 +1069,7 @@ void keyboard(unsigned char key, int x, int y)
     case 's':
     case 'S':
         nextX -= sin(targetAngle);
-        nextZ -= cos(targetAngle); // Mergi inapoi
+        nextZ -= cos(targetAngle); // Mergem inapoi
         break;
 
     case 27:
@@ -1088,17 +1079,16 @@ void keyboard(unsigned char key, int x, int y)
     if (key == 'w' || key == 's' || key == 'a' || key == 'd' ||
         key == 'W' || key == 'S' || key == 'A' || key == 'D')
     {
-        cameraAngle += cameraOrbit;
-        cameraOrbit = 0.0f;
+        cameraAngle += cameraMouseRotation;
+        cameraMouseRotation = 0.0f;
 
-        // Asiguram ca unghiurile sunt mereu intre -PI si PI pentru a evita problemele de interpolare
         if (cameraAngle > PI) cameraAngle -= 2.0f * PI;
         if (cameraAngle < -PI) cameraAngle += 2.0f * PI;
 
         cameraTarget = targetAngle + PI;
 
-        while (cameraTarget - cameraAngle > PI) cameraTarget -= 2.0f * PI;
-        while (cameraTarget - cameraAngle < -PI) cameraTarget += 2.0f * PI;
+        if (cameraTarget - cameraAngle > PI) cameraTarget -= 2.0f * PI;
+        if (cameraTarget - cameraAngle < -PI) cameraTarget += 2.0f * PI;
     }
 
     int gridX = (int)(nextX + 0.5f);
@@ -1111,7 +1101,6 @@ void keyboard(unsigned char key, int x, int y)
         targetX = nextX;
         targetZ = nextZ;
     }
-
     // Daca nu e tunel, verificam coliziunea normala cu peretii
     else if (gridX >= 0 && gridX < MAZE_WIDTH && gridZ >= 0 && gridZ < MAZE_HEIGHT)
     {
@@ -1168,6 +1157,7 @@ void init()
     glCullFace(GL_BACK);
     glewInit();
 
+	// Depth map pentru umbre
     glGenFramebuffers(1, &depthMapFBO);
     glGenTextures(1, &depthMap);
     glBindTexture(GL_TEXTURE_2D, depthMap);
@@ -1188,19 +1178,17 @@ void init()
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     // Fantomele
-    bool res = loadOBJ("obj/Ghost.obj", ghostVertices, ghostUVs, ghostNormals);
+    loadOBJ("obj/Ghost.obj", ghostVertices, ghostUVs, ghostNormals);
 
     glGenVertexArrays(1, &ghostVao);
     glBindVertexArray(ghostVao);
 
-    // Pozitiile vertexilor
     glGenBuffers(1, &ghostVboPos);
     glBindBuffer(GL_ARRAY_BUFFER, ghostVboPos);
     glBufferData(GL_ARRAY_BUFFER, ghostVertices.size() * sizeof(glm::vec3), &ghostVertices[0], GL_STATIC_DRAW);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
     glEnableVertexAttribArray(0);
 
-    // Normalele vertexilor
     glGenBuffers(1, &ghostVboNorm);
     glBindBuffer(GL_ARRAY_BUFFER, ghostVboNorm);
     glBufferData(GL_ARRAY_BUFFER, ghostNormals.size() * sizeof(glm::vec3), &ghostNormals[0], GL_STATIC_DRAW);
@@ -1262,8 +1250,10 @@ void init()
     glGenBuffers(1, &haloVbo);
     glBindVertexArray(haloVao);
     glBindBuffer(GL_ARRAY_BUFFER, haloVbo);
+
     glBufferData(GL_ARRAY_BUFFER, sizeof(squareVertices), &squareVertices, GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
+
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
     glBindVertexArray(0);
 
@@ -1361,7 +1351,8 @@ void init()
     glUniform3fv(lightUniforms.lightPosLoc, 1, glm::value_ptr(lightPos));
 
     // Initializare skybox
-    float skyboxVertices[] = {
+    float skyboxVertices[] = 
+    {
         -1.0f,  1.0f, -1.0f,
         -1.0f, -1.0f, -1.0f,
          1.0f, -1.0f, -1.0f,
@@ -1453,7 +1444,7 @@ void init()
 int main(int argc, char** argv)
 {
     glutInit(&argc, argv);
-    glutInitDisplayMode(GLUT_RGB | GLUT_DEPTH | GLUT_DOUBLE); // Folosim double buffering pentru a preveni flickering-ul
+    glutInitDisplayMode(GLUT_RGB | GLUT_DEPTH | GLUT_DOUBLE);
     glutInitWindowPosition(200, 200);
     glutInitWindowSize(1000, 800);
     glutCreateWindow("Pac-Man");
