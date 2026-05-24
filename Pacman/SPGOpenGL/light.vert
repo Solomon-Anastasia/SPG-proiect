@@ -2,10 +2,7 @@
 
 layout(location = 0) in vec3 vPos;
 layout(location = 1) in vec2 vTexCoord;
-
-// Normala pentru pereti
 layout(location = 2) in vec3 vNormal;
-
 layout(location = 3) in vec3 vTangent;
 
 uniform mat4 mvpMatrix;
@@ -28,19 +25,22 @@ out vec4 FragPosLightSpace;
 
 void main()
 {
+    // Calculam pozitia finala a varfului in spatiul clip si pozitia in spatiul luminii
     gl_Position = mvpMatrix * vec4(vPos, 1.0);
     pos = vec3(modelMatrix * vec4(vPos, 1.0));
-    TexCoord = vTexCoord;
     FragPosLightSpace = lightSpaceMatrix * vec4(pos, 1.0);
 
-    // Verificam daca normala si tangenta sunt valide, daca nu, folosim valori implicite
+    TexCoord = vTexCoord;
+    
+    // Fallback pentru obiecte ce nu au normal mapping
     vec3 actualNormal = length(vNormal) > 0.1 ? vNormal : normalize(vPos);
     vec3 actualTangent = length(vTangent) > 0.1 ? vTangent : vec3(1.0, 0.0, 0.0);
 
+    // Matricea TBN
     vec3 T = normalize(vec3(normalMatrix * vec4(actualTangent, 0.0)));
     vec3 N = normalize(vec3(normalMatrix * vec4(actualNormal, 0.0)));
     
-    // Procesul de ortogonalizare Gram-Schmidt pentru a asigura ca T este perpendicular pe N
+    // Procesul de ortogonalizare pentru a asigura ca T este perpendicular pe N
     T = normalize(T - dot(T, N) * N);
     vec3 B = cross(N, T); 
 
@@ -49,5 +49,6 @@ void main()
     TangentLightPos = TBN * lightPos;
     TangentViewPos = TBN * viewPos;
     TangentFragPos = TBN * pos;
+
     normal = N;
 }

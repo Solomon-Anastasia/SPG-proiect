@@ -37,48 +37,21 @@ float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir)
     // PCF (Percentage Closer Filtering) pentru a reduce aliasing-ul umbrilor
     float shadow = 0.0;
     vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
-    for(int x = 0; x <= 1; ++x) 
+    for(int x = -1; x <= 1; ++x) 
     {
-        for(int y = 0; y <= 1; ++y) 
+        for(int y = -1; y <= 1; ++y) 
         {
             float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r; 
             shadow += currentDepth - bias > pcfDepth ? 1.0 : 0.0;
         }    
     }
-    return shadow / 4.0;
-}
-
-vec3 lighting(vec3 pos, vec3 normal, vec3 lightPos, vec3 viewPos,
-              vec3 ambient, vec3 diffuse, vec3 specular, float specPower,
-              vec3 baseColor)
-{
-    vec3 N = normalize(normal);
-    vec3 L = normalize(lightPos - pos);
-
-    vec3 ambientComponent = ambient;
-
-    float dotLN = max(dot(N, L), 0.0);
-    vec3 diffuseComponent = diffuse * dotLN;
-
-    vec3 V = normalize(viewPos - pos);
-    vec3 R = reflect(-L, N);
-    float spec = pow(max(dot(R, V), 0.0), specPower);
-    
-    // Eliminam componenta speculara pentru pereti texturati
-    vec3 specularComponent = useTexture ? vec3(0.0) : (specular * spec);
-
-    float shadow = ShadowCalculation(FragPosLightSpace, N, L);
-
-    // Aplicam iluminarea doar daca pixelul nu este in umbra
-    return (ambientComponent * baseColor) + (1.0 - shadow) * ((diffuseComponent * baseColor) + specularComponent);
+    return shadow / 9.0;
 }
 
 void main()
 {
     vec3 texColor = texture(wallTexture, TexCoord).rgb;
-    
     vec3 wallTint = vec3(0.6, 0.6, 0.85);
-
     vec3 baseColor = useTexture ? (texColor * wallTint) : objectColor;
 
     if (!useLighting) 
@@ -95,7 +68,6 @@ void main()
         
         // Amplificam componentele X si Y pentru a face detaliile mai vizibile
         N.xy *= 1.5; 
-        
         N = normalize(N); 
     } 
     else 
