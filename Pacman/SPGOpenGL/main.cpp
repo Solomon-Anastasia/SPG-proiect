@@ -177,12 +177,14 @@ std::string textFileRead(char* fn)
 {
     std::ifstream ifile(fn);
     std::string filetext;
+
     while (ifile.good())
     {
         std::string line;
         std::getline(ifile, line);
         filetext.append(line + "\n");
     }
+
     return filetext;
 }
 
@@ -190,7 +192,7 @@ void renderText2D(float x, float y, void* font, const std::string& text, glm::ve
 {
     // Oprim testul pentru a afisa textul deasupra 
     glDisable(GL_DEPTH_TEST);
-    glUseProgram(0); // Unbind pentru a elimina orice shader activ
+    glUseProgram(0); // glutBitmapCharacter da crash daca e activ un shadder
 
     // Activam blending pentru a face fundalul semitransparent
     glEnable(GL_BLEND);
@@ -199,10 +201,10 @@ void renderText2D(float x, float y, void* font, const std::string& text, glm::ve
     glColor4f(0.0f, 0.0f, 0.0f, 0.3f);
 
     glBegin(GL_QUADS);
-    glVertex2f(-1.0f, -1.0f);
-    glVertex2f(1.0f, -1.0f);
-    glVertex2f(1.0f, 1.0f);
-    glVertex2f(-1.0f, 1.0f);
+        glVertex2f(-1.0f, -1.0f);
+        glVertex2f(1.0f, -1.0f);
+        glVertex2f(1.0f, 1.0f);
+        glVertex2f(-1.0f, 1.0f);
     glEnd();
 
     // Dupa desenarea fundalului, dezactivam blending-ul pentru a nu afecta restul scenei
@@ -214,9 +216,7 @@ void renderText2D(float x, float y, void* font, const std::string& text, glm::ve
     glRasterPos2f(x, y);
 
     for (char c : text)
-    {
         glutBitmapCharacter(font, c);
-    }
 
     // Reactivam testul de adancime pentru restul scenei
     glEnable(GL_DEPTH_TEST);
@@ -237,33 +237,36 @@ void buildWallSegments()
             if (maze[r][c] == 1 && !visited[r][c])
             {
                 int w = 0;
+
                 // Ne intindem pe orizontala cat putem
-                while (c + w < MAZE_WIDTH && maze[r][c + w] == 1 && !visited[r][c + w])
+                while (c + w < MAZE_WIDTH
+                    && maze[r][c + w] == 1
+                    && !visited[r][c + w]
+                    )
                 {
                     w++;
                 }
 
                 int d = 0;
+
                 // Daca nu merge pe orizontala, incercam pe verticala
                 if (w == 1)
                 {
-                    while (r + d < MAZE_HEIGHT && maze[r + d][c] == 1 && !visited[r + d][c])
+                    while (r + d < MAZE_HEIGHT
+                        && maze[r + d][c] == 1
+                        && !visited[r + d][c]
+                        )
                     {
                         d++;
                     }
                 }
-                else {
+                else
                     d = 1;
-                }
 
                 // Marcam segmentul ca vizitat
                 for (int i = 0; i < d; i++)
-                {
                     for (int j = 0; j < w; j++)
-                    {
                         visited[r + i][c + j] = true;
-                    }
-                }
 
                 WallSegment seg;
 
