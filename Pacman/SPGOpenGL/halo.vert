@@ -4,13 +4,16 @@ layout(location = 0) in vec2 vPos;
 
 uniform mat4 projection;
 uniform mat4 view;
+
 uniform vec3 centerPos;
+
 uniform float size;
 
 out vec2 uv;
 
 void main()
 {
+    // Transmitem pozitia in spatiu a vertexului pentru fragment shader 
     uv = vPos;
     
     // Halo mereu spre camera

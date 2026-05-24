@@ -1,9 +1,10 @@
 #version 400
 
 in vec2 uv;
-out vec4 fragColor;
 
 uniform vec3 haloColor;
+
+out vec4 fragColor;
 
 void main()
 {

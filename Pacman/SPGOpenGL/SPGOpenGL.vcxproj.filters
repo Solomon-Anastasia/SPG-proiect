@@ -17,10 +17,10 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="pixel_light.frag">
+    <None Include="light.frag">
       <Filter>shaders</Filter>
     </None>
-    <None Include="pixel_light.vert">
+    <None Include="light.vert">
       <Filter>shaders</Filter>
     </None>
     <None Include="depth.vert">

@@ -190,6 +190,17 @@ void motion(int x, int y)
         float delta = (x - lastMouseX) * 0.01f;
         cameraOrbit += delta;
         lastMouseX = x;
+
+		// Limitam cameraOrbit intre -PI si PI pentru a evita overflow
+        if (cameraOrbit > PI)
+        {
+            cameraOrbit -= 2.0f * PI;
+        }
+
+        if (cameraOrbit < -PI)
+        {
+            cameraOrbit += 2.0f * PI;
+        }
     }
 }
 
@@ -1122,8 +1133,8 @@ void init()
 
     restartGame();
 
-    std::string vsLightText = textFileRead("pixel_light.vert");
-    std::string fsLightText = textFileRead("pixel_light.frag");
+    std::string vsLightText = textFileRead("light.vert");
+    std::string fsLightText = textFileRead("light.frag");
     std::string vsDepthText = textFileRead("depth.vert");
     std::string fsDepthText = textFileRead("depth.frag");
 
@@ -1307,14 +1318,9 @@ void keyboard(unsigned char key, int x, int y)
     float nextX = targetX;
     float nextZ = targetZ;
 
-    // --- NEW CAMERA-RELATIVE MATH ---
-    // 1. Get the camera's actual view angle including the mouse drag
+	// Rotunjim la unghiurile pentru a evita problemele de interpolare cand trecem de la +PI la -PI sau invers
     float finalCamAngle = cameraAngle + cameraOrbit;
-
-    // 2. "Up" on the screen is the direction pointing AWAY from the camera
     float screenUpAngle = finalCamAngle + PI;
-
-    // 3. Snap that angle to the nearest 90 degrees (PI / 2) to keep Pac-Man on the grid
     float step = PI / 2.0f;
     float snappedUp = round(screenUpAngle / step) * step;
 
@@ -1372,24 +1378,34 @@ void keyboard(unsigned char key, int x, int y)
         // nu este nevoie de determinarea coliziunii
     case 'a':
     case 'A':
-        targetAngle += PI / 2.0f; // Turn 90 degrees Left
+		targetAngle += PI / 2.0f; // Intoarcem 90 de grade stanga
+
+        if (targetAngle > PI)
+        {
+            targetAngle -= 2.0f * PI;
+        }
         break;
 
     case 'd':
     case 'D':
-        targetAngle -= PI / 2.0f; // Turn 90 degrees Right
+		targetAngle -= PI / 2.0f; // Intoarcem 90 de grade dreapta
+        
+        if (targetAngle < -PI)
+        {
+            targetAngle += 2.0f * PI;
+        }
         break;
 
     case 'w':
     case 'W':
         nextX += sin(targetAngle);
-        nextZ += cos(targetAngle); // Walk Forward
+        nextZ += cos(targetAngle); // Mergem inainte
         break;
 
     case 's':
     case 'S':
         nextX -= sin(targetAngle);
-        nextZ -= cos(targetAngle); // Walk Backward
+		nextZ -= cos(targetAngle); // Mergi inapoi
         break;
 
     case 27:
@@ -1399,15 +1415,15 @@ void keyboard(unsigned char key, int x, int y)
     if (key == 'w' || key == 's' || key == 'a' || key == 'd' ||
         key == 'W' || key == 'S' || key == 'A' || key == 'D')
     {
-        // 1. Bake the current mouse drag into the actual camera angle
-        // This gives the transition a smooth starting point.
         cameraAngle += cameraOrbit;
         cameraOrbit = 0.0f;
 
-        // 2. Set the target directly behind Pac-Man's new direction
+		// Asiguram ca unghiurile sunt mereu intre -PI si PI pentru a evita problemele de interpolare
+        if (cameraAngle > PI) cameraAngle -= 2.0f * PI;
+        if (cameraAngle < -PI) cameraAngle += 2.0f * PI;
+
         cameraTarget = targetAngle + PI;
 
-        // 3. Normalize the angles so the camera doesn't spin 360 degrees the long way around!
         while (cameraTarget - cameraAngle > PI) cameraTarget -= 2.0f * PI;
         while (cameraTarget - cameraAngle < -PI) cameraTarget += 2.0f * PI;
     }
@@ -1422,6 +1438,7 @@ void keyboard(unsigned char key, int x, int y)
         targetX = nextX;
         targetZ = nextZ;
     }
+
     // Daca nu e tunel, verificam coliziunea normala cu peretii
     else if (gridX >= 0 && gridX < MAZE_WIDTH && gridZ >= 0 && gridZ < MAZE_HEIGHT)
     {
@@ -1438,16 +1455,21 @@ void keyboard(unsigned char key, int x, int y)
 void specialKeyboard(int key, int x, int y)
 {
     unsigned char mapped = 0;
-    switch (key) {
+
+    switch (key) 
+    {
     case GLUT_KEY_UP:
         mapped = 'w';
         break;
+
     case GLUT_KEY_DOWN:
         mapped = 's';
         break;
+
     case GLUT_KEY_LEFT:
         mapped = 'a';
         break;
+
     case GLUT_KEY_RIGHT:
         mapped = 'd';
         break;
