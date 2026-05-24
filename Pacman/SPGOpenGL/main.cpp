@@ -22,24 +22,9 @@
 
 #define PI glm::pi<float>()
 
+// MVP
 GLuint shader_programme, vao;
 glm::mat4 projectionMatrix, viewMatrix, modelMatrix;
-
-SphereMesh sphere(3);
-GLuint sphereVao, sphereVbo, sphereEbo;
-int sphereElementCount = (GLsizei)sphere.triangles.size() * sizeof(glm::ivec3);
-
-CubeMesh wallCube;
-GLuint cubeVao, cubeVbo, cubeEbo;
-
-// Fiecare cub are 12 triunghiuri, deci 36 indici
-int cubeElementCount = (GLsizei)wallCube.triangles.size() * 3;
-
-GLuint wallBoxVao, wallBoxVbo;
-GLuint wallTexture;
-
-glm::vec3 lightPos(10.0f, 20.0f, 15.0f); // Pozitia sursei de lumina
-glm::vec3 viewPos(5.0f, 18.0f, 12.0f); // Pozitia initiala a camerei
 
 // Pentru shadow mapping
 GLuint depthMapFBO;
@@ -47,42 +32,56 @@ GLuint depthMap;
 const unsigned int SHADOW_WIDTH = 2048, SHADOW_HEIGHT = 2048; // Rezolutia
 GLuint depth_shader_programme; // Avem nevoie de un shader separat pentru a desena in depth map
 
+// Pacman
+SphereMesh sphere(3);
+GLuint sphereVao, sphereVbo, sphereEbo;
+int sphereElementCount = (GLsizei)sphere.triangles.size() * sizeof(glm::ivec3);
+
+// Peretii
+CubeMesh wallCube;
+GLuint cubeVao, cubeVbo, cubeEbo;
+// Fiecare cub are 12 triunghiuri, deci 36 indici
+int cubeElementCount = (GLsizei)wallCube.triangles.size() * 3;
+
+GLuint wallBoxVao, wallBoxVbo;
+GLuint wallTexture;
+
 // Pentru halo
 GLuint haloShaderProg;
 GLuint haloVao, haloVbo;
 GLint haloProjLoc, haloViewLoc, haloCenterLoc, haloSizeLoc, haloColorLoc;
 
 // Cubemap
-GLuint skyboxShaderProg;
-GLuint skyboxVAO, skyboxVBO;
+GLuint skybox_shader_programme;
+GLuint skyboxVao, skyboxVbo;
 GLuint cubemapTexture;
 GLuint wallNormalMap;
+GLint skyboxProjLoc, skyboxViewLoc, skyboxTexLoc;
 
 bool enableNormalMapping = true;
 bool enableGlow = true;
 bool enableShadows = true;
 
-GLint skyboxProjLoc, skyboxViewLoc, skyboxTexLoc;
-
 // Logica pentru lerping pentru pacman si camera
 float pacX = 9.0f, pacZ = 10.0f;
 float targetX = 9.0f, targetZ = 10.0f;
 
-// Schimbam unghiul initial la PI ca sa priveasca in sus (spre un culoar liber)
-float currentAngle = PI, targetAngle = PI;
-float rotationSpeed = 0.01f;
+glm::vec3 lightPos(10.0f, 20.0f, 15.0f); // Pozitia sursei de lumina
+glm::vec3 viewPos(5.0f, 18.0f, 12.0f); // Pozitia initiala a camerei
 
+// Unghiul initial pacman + camera care il urmareste (sus)
+float currentAngle = PI, targetAngle = PI;
 float cameraAngle = PI, cameraTarget = PI;
-float cameraLagSpeed = 0.01f;
 
 float lastFrameTime = 0.0f;
 float deltaTime = 0.0f;
 
 // Pentru controlul camerei cu mouse-ul
 int lastMouseX = -1;
-float cameraOrbit = 0.0f;
+float cameraOrbit = 0.0f; // Cat de mult s-a invartit camera in jurul lui pacman
 bool mouseDown = false;
 
+// Starea jocului
 bool isGameOver = false;
 bool isGameWon = false;
 
@@ -109,7 +108,7 @@ int maze[MAZE_HEIGHT][MAZE_WIDTH] = {
 
 bool pellets[MAZE_HEIGHT][MAZE_WIDTH];
 
-// Salvam vertexii pentru a reduce draw call-urile pentru fiecare cub din labirint
+// Pentru a stoca segmentele de perete intr-o singura zona de memorie
 struct Vertex
 {
     glm::vec3 pos;
@@ -138,10 +137,10 @@ struct Ghost
 {
     float x, z;
     float targetX, targetZ;
+
     glm::vec3 color;
     float speed = 0.3f;
 
-    int currentDir;
     float targetAngle;
     float currentAngle;
 
@@ -171,38 +170,8 @@ struct ShaderUniforms {
     GLint normalMapLoc = -1;
 };
 
-ShaderUniforms lightUniforms;   // pentru shader_programme
-ShaderUniforms depthUniforms;   // pentru depth_shader_programme
-
-void mouse(int button, int state, int x, int y)
-{
-    if (button == GLUT_LEFT_BUTTON)
-    {
-        mouseDown = (state == GLUT_DOWN);
-        lastMouseX = x;
-    }
-}
-
-void motion(int x, int y)
-{
-    if (mouseDown && lastMouseX >= 0)
-    {
-        float delta = (x - lastMouseX) * 0.01f;
-        cameraOrbit += delta;
-        lastMouseX = x;
-
-		// Limitam cameraOrbit intre -PI si PI pentru a evita overflow
-        if (cameraOrbit > PI)
-        {
-            cameraOrbit -= 2.0f * PI;
-        }
-
-        if (cameraOrbit < -PI)
-        {
-            cameraOrbit += 2.0f * PI;
-        }
-    }
-}
+ShaderUniforms lightUniforms; // Pentru shader_programme
+ShaderUniforms depthUniforms; // Pentru depth_shader_programme
 
 std::string textFileRead(char* fn)
 {
@@ -251,130 +220,6 @@ void renderText2D(float x, float y, void* font, const std::string& text, glm::ve
 
     // Reactivam testul de adancime pentru restul scenei
     glEnable(GL_DEPTH_TEST);
-}
-
-void initGhosts()
-{
-    ghosts.clear();
-    glm::vec3 colors[] =
-    {
-        glm::vec3(1.0f, 0.0f, 0.0f), // Blinky (top sus)
-        glm::vec3(1.0f, 0.7f, 0.8f), // Pinky (top dreapta)
-        glm::vec3(0.0f, 1.0f, 1.0f), // Inky (stanga jos)
-        glm::vec3(1.0f, 0.5f, 0.0f)  // Clyde (stanga sus)
-    };
-
-    std::vector<std::vector<glm::ivec2>> routes =
-    {
-        {{9, 1}, {9, 3}, {6, 3}, {6, 8}, {13, 8}, {13, 3}, {10, 3}, {10, 1}},
-        {{4, 1}, {4, 10}, {9, 10}, {9, 8}, {10, 8}, {10, 10}, {15, 10}, {15, 1}},
-        {{1, 10}, {1, 12}, {8, 12}, {8, 13}, {11, 13}, {11, 12}, {18, 12}, {18, 10}, {10, 10}, {10, 8}, {9, 8}, {9, 10}},
-        {{9, 5}, {8, 5}, {8, 6}, {11, 6}, {11, 5}, {10, 5}, {10, 10}, {18, 10}, {18, 1}, {10, 1}, {10, 3}, {9, 3}, {9, 1}, {1, 1}, {1, 10}, {9, 10}}
-    };
-
-    for (int i = 0; i < 4; i++)
-    {
-        Ghost g;
-        g.route = routes[i];
-        g.routeIndex = 0;
-
-        // Incepem fiecare fantoma la prima pozitie din ruta sa
-        g.x = g.targetX = (float)g.route[0].x;
-        g.z = g.targetZ = (float)g.route[0].y;
-
-        g.color = colors[i];
-        g.speed = 0.06f;
-
-        g.currentDir = 3; // Privire initiala in sus pentru toate fantomele
-        g.targetAngle = 0.0f;
-        g.currentAngle = 0.0f;
-
-        ghosts.push_back(g); // Adaugam fantoma in lista globala
-    }
-}
-
-void updateGhosts(float dt)
-{
-    for (auto& g : ghosts) // & pentru a modifica direct in vectorul global
-    {
-        // Calculam distanta pana la tinta curenta
-        float dx = g.targetX - g.x;
-        float dz = g.targetZ - g.z;
-        float dist = std::sqrt(dx * dx + dz * dz);
-
-        // Daca distanta e semnificativa, continuam sa ne miscam catre tinta
-        if (dist > 0.001f)
-        {
-            float step = g.speed * 60.0f * dt;
-
-            if (step > dist) step = dist;
-
-            g.x += (dx / dist) * step;
-            g.z += (dz / dist) * step;
-        }
-
-        // Lerp unghiular pentru a face intoarcerile mai fluide
-        float angleDiff = g.targetAngle - g.currentAngle;
-        while (angleDiff > PI) angleDiff -= 2.0f * PI;
-        while (angleDiff < -PI) angleDiff += 2.0f * PI;
-
-        g.currentAngle += angleDiff * (10.0f * dt);
-
-        // Daca am ajuns aproape de tinta, trecem la urmatorul punct din ruta
-        if (dist <= 0.01f)
-        {
-            g.x = g.targetX;
-            g.z = g.targetZ;
-
-            // Avansam in ruta
-            g.routeIndex = (g.routeIndex + 1) % g.route.size();
-            glm::ivec2 nextStep = g.route[g.routeIndex];
-
-            g.targetX = (float)nextStep.x;
-            g.targetZ = (float)nextStep.y;
-
-            // Determinam noua tinta unghiulara bazata pe directia de miscare
-            int roundedX = (int)(g.x + 0.5f);
-            int roundedZ = (int)(g.z + 0.5f);
-
-            if (nextStep.x > roundedX)
-            {
-                g.targetAngle = 0.0f; // Fata dreapta
-            }
-            else if (nextStep.x < roundedX)
-            {
-                g.targetAngle = PI; // Fata stanga
-            }
-            else if (nextStep.y > roundedZ)
-            {
-                g.targetAngle = -PI / 2.0f; // Fata jos
-            }
-            else if (nextStep.y < roundedZ)
-            {
-                g.targetAngle = PI / 2.0f; // Fata sus
-            }
-        }
-    }
-}
-
-void loadNormalMap()
-{
-    glGenTextures(1, &wallNormalMap);
-    glBindTexture(GL_TEXTURE_2D, wallNormalMap);
-    stbi_set_flip_vertically_on_load(true);
-
-    int width, height, nrChannels;
-    unsigned char* data = stbi_load("img/WallNormal.png", &width, &height, &nrChannels, 0);
-    if (data) {
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
-        glGenerateMipmap(GL_TEXTURE_2D);
-    }
-    stbi_image_free(data);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 }
 
 // Construire segmente de pereti
@@ -602,6 +447,26 @@ void loadWallTexture()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 }
 
+void loadNormalMap()
+{
+    glGenTextures(1, &wallNormalMap);
+    glBindTexture(GL_TEXTURE_2D, wallNormalMap);
+    stbi_set_flip_vertically_on_load(true);
+
+    int width, height, nrChannels;
+    unsigned char* data = stbi_load("img/WallNormal.png", &width, &height, &nrChannels, 0);
+    if (data) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+        glGenerateMipmap(GL_TEXTURE_2D);
+    }
+    stbi_image_free(data);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+}
+
 GLuint loadCubemap(std::vector<std::string> faces)
 {
     GLuint textureID;
@@ -636,6 +501,109 @@ GLuint loadCubemap(std::vector<std::string> faces)
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 
     return textureID;
+}
+
+void initGhosts()
+{
+    ghosts.clear();
+    glm::vec3 colors[] =
+    {
+        glm::vec3(1.0f, 0.0f, 0.0f), // Blinky (top sus)
+        glm::vec3(1.0f, 0.7f, 0.8f), // Pinky (top dreapta)
+        glm::vec3(0.0f, 1.0f, 1.0f), // Inky (stanga jos)
+        glm::vec3(1.0f, 0.5f, 0.0f)  // Clyde (stanga sus)
+    };
+
+    std::vector<std::vector<glm::ivec2>> routes =
+    {
+        {{9, 1}, {9, 3}, {6, 3}, {6, 8}, {13, 8}, {13, 3}, {10, 3}, {10, 1}},
+        {{4, 1}, {4, 10}, {9, 10}, {9, 8}, {10, 8}, {10, 10}, {15, 10}, {15, 1}},
+        {{1, 10}, {1, 12}, {8, 12}, {8, 13}, {11, 13}, {11, 12}, {18, 12}, {18, 10}, {10, 10}, {10, 8}, {9, 8}, {9, 10}},
+        {{9, 5}, {8, 5}, {8, 6}, {11, 6}, {11, 5}, {10, 5}, {10, 10}, {18, 10}, {18, 1}, {10, 1}, {10, 3}, {9, 3}, {9, 1}, {1, 1}, {1, 10}, {9, 10}}
+    };
+
+    for (int i = 0; i < 4; i++)
+    {
+        Ghost g;
+        g.route = routes[i];
+        g.routeIndex = 0;
+
+        // Incepem fiecare fantoma la prima pozitie din ruta sa
+        g.x = g.targetX = (float)g.route[0].x;
+        g.z = g.targetZ = (float)g.route[0].y;
+
+        g.color = colors[i];
+        g.speed = 0.06f;
+
+        g.targetAngle = 0.0f;
+        g.currentAngle = 0.0f;
+
+        ghosts.push_back(g); // Adaugam fantoma in lista globala
+    }
+}
+
+void updateGhosts(float dt)
+{
+    for (auto& g : ghosts) // & pentru a modifica direct in vectorul global
+    {
+        // Calculam distanta pana la tinta curenta
+        float dx = g.targetX - g.x;
+        float dz = g.targetZ - g.z;
+        float dist = std::sqrt(dx * dx + dz * dz);
+
+        // Daca distanta e semnificativa, continuam sa ne miscam catre tinta
+        if (dist > 0.001f)
+        {
+            float step = g.speed * 60.0f * dt;
+
+            if (step > dist) step = dist;
+
+            g.x += (dx / dist) * step;
+            g.z += (dz / dist) * step;
+        }
+
+        // Lerp unghiular pentru a face intoarcerile mai fluide
+        float angleDiff = g.targetAngle - g.currentAngle;
+        while (angleDiff > PI) angleDiff -= 2.0f * PI;
+        while (angleDiff < -PI) angleDiff += 2.0f * PI;
+
+        g.currentAngle += angleDiff * (10.0f * dt);
+
+        // Daca am ajuns aproape de tinta, trecem la urmatorul punct din ruta
+        if (dist <= 0.01f)
+        {
+            g.x = g.targetX;
+            g.z = g.targetZ;
+
+            // Avansam in ruta
+            g.routeIndex = (g.routeIndex + 1) % g.route.size();
+            glm::ivec2 nextStep = g.route[g.routeIndex];
+
+            g.targetX = (float)nextStep.x;
+            g.targetZ = (float)nextStep.y;
+
+            // Determinam noua tinta unghiulara bazata pe directia de miscare
+            int roundedX = (int)(g.x + 0.5f);
+            int roundedZ = (int)(g.z + 0.5f);
+
+            if (nextStep.x > roundedX)
+            {
+                g.targetAngle = 0.0f; // Fata dreapta
+            }
+            else if (nextStep.x < roundedX)
+            {
+                g.targetAngle = PI; // Fata stanga
+            }
+            else if (nextStep.y > roundedZ)
+            {
+                g.targetAngle = -PI / 2.0f; // Fata jos
+            }
+            else if (nextStep.y < roundedZ)
+            {
+                g.targetAngle = PI / 2.0f; // Fata sus
+            }
+        }
+    }
 }
 
 void restartGame()
@@ -932,7 +900,7 @@ void display()
     // Cubemap pentru skybox
     // Desenam skybox-ul ultimul, in spate la toate
     glDepthFunc(GL_LEQUAL);
-    glUseProgram(skyboxShaderProg);
+    glUseProgram(skybox_shader_programme);
 
     glUniformMatrix4fv(skyboxProjLoc, 1, GL_FALSE, glm::value_ptr(projectionMatrix));
     glUniformMatrix4fv(skyboxViewLoc, 1, GL_FALSE, glm::value_ptr(viewMatrix));
@@ -940,7 +908,7 @@ void display()
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
 
-    glBindVertexArray(skyboxVAO);
+    glBindVertexArray(skyboxVao);
     glDrawArrays(GL_TRIANGLES, 0, 36);
     glBindVertexArray(0);
 
@@ -997,6 +965,223 @@ void display()
 
     glutSwapBuffers();
     glutPostRedisplay();
+}
+
+void mouse(int button, int state, int x, int y)
+{
+    if (button == GLUT_LEFT_BUTTON)
+    {
+        mouseDown = (state == GLUT_DOWN);
+        lastMouseX = x;
+    }
+}
+
+void motion(int x, int y)
+{
+    if (mouseDown && lastMouseX >= 0)
+    {
+        float delta = (x - lastMouseX) * 0.01f;
+        cameraOrbit += delta;
+        lastMouseX = x;
+
+        // Limitam cameraOrbit intre -PI si PI pentru a evita overflow
+        if (cameraOrbit > PI)
+        {
+            cameraOrbit -= 2.0f * PI;
+        }
+
+        if (cameraOrbit < -PI)
+        {
+            cameraOrbit += 2.0f * PI;
+        }
+    }
+}
+
+void keyboard(unsigned char key, int x, int y)
+{
+
+    if (key == 'r' || key == 'R')
+    {
+        restartGame();
+        glutPostRedisplay();
+        return;
+    }
+
+    if (isGameOver || isGameWon)
+    {
+        return;
+    }
+
+    float nextX = targetX;
+    float nextZ = targetZ;
+
+    // Rotunjim la unghiurile pentru a evita problemele de interpolare cand trecem de la +PI la -PI sau invers
+    float finalCamAngle = cameraAngle + cameraOrbit;
+    float screenUpAngle = finalCamAngle + PI;
+    float step = PI / 2.0f;
+    float snappedUp = round(screenUpAngle / step) * step;
+
+    switch (key)
+    {
+        // Fullscreen
+    case 'f':
+    case 'F':
+        glutFullScreenToggle();
+        printf("Fullscreen mode activated!\n");
+        return;
+
+        // Pentru testare
+    case 'k':
+    case 'K':
+        printf("Cheat code activated!\n");
+        for (int r = 0; r < MAZE_HEIGHT; r++)
+        {
+            for (int c = 0; c < MAZE_WIDTH; c++)
+            {
+                pellets[r][c] = false;
+            }
+        }
+
+        pellets[9][9] = true;
+        pellets[8][9] = true;
+        pellets[7][9] = true;
+        return;
+
+        // Toggle pentru glow
+    case 'g':
+    case 'G':
+        enableGlow = !enableGlow;
+        printf("Glow effect: %s\n", enableGlow ? "ON" : "OFF");
+        glutPostRedisplay();
+        return;
+
+        // Toggle pentru umbre
+    case 'm':
+    case 'M':
+        enableShadows = !enableShadows;
+        printf("Shadows: %s\n", enableShadows ? "ON" : "OFF");
+        glutPostRedisplay();
+        return;
+
+        // Toggle pentru normal mapping
+    case 'n':
+    case 'N':
+        enableNormalMapping = !enableNormalMapping;
+        printf("Normal mapping: %s\n", enableNormalMapping ? "ON" : "OFF");
+        glutPostRedisplay();
+        return;
+
+        // Pentru a si d nu se misca lateral, ci sa se intoarca la 90 de grade stanga/dreapta,
+        // nu este nevoie de determinarea coliziunii
+    case 'a':
+    case 'A':
+        targetAngle += PI / 2.0f; // Intoarcem 90 de grade stanga
+
+        if (targetAngle > PI)
+        {
+            targetAngle -= 2.0f * PI;
+        }
+        break;
+
+    case 'd':
+    case 'D':
+        targetAngle -= PI / 2.0f; // Intoarcem 90 de grade dreapta
+
+        if (targetAngle < -PI)
+        {
+            targetAngle += 2.0f * PI;
+        }
+        break;
+
+    case 'w':
+    case 'W':
+        nextX += sin(targetAngle);
+        nextZ += cos(targetAngle); // Mergem inainte
+        break;
+
+    case 's':
+    case 'S':
+        nextX -= sin(targetAngle);
+        nextZ -= cos(targetAngle); // Mergi inapoi
+        break;
+
+    case 27:
+        exit(0); // ESC key
+    }
+
+    if (key == 'w' || key == 's' || key == 'a' || key == 'd' ||
+        key == 'W' || key == 'S' || key == 'A' || key == 'D')
+    {
+        cameraAngle += cameraOrbit;
+        cameraOrbit = 0.0f;
+
+        // Asiguram ca unghiurile sunt mereu intre -PI si PI pentru a evita problemele de interpolare
+        if (cameraAngle > PI) cameraAngle -= 2.0f * PI;
+        if (cameraAngle < -PI) cameraAngle += 2.0f * PI;
+
+        cameraTarget = targetAngle + PI;
+
+        while (cameraTarget - cameraAngle > PI) cameraTarget -= 2.0f * PI;
+        while (cameraTarget - cameraAngle < -PI) cameraTarget += 2.0f * PI;
+    }
+
+    int gridX = (int)(nextX + 0.5f);
+    int gridZ = (int)(nextZ + 0.5f);
+
+    // Logica de teleportare: daca Pacman incearca sa iasa pe latura stanga sau dreapta 
+    // a labirintului prin tunel, il aducem pe partea cealalta
+    if (gridZ == 7 && (gridX < 0 || gridX >= MAZE_WIDTH))
+    {
+        targetX = nextX;
+        targetZ = nextZ;
+    }
+
+    // Daca nu e tunel, verificam coliziunea normala cu peretii
+    else if (gridX >= 0 && gridX < MAZE_WIDTH && gridZ >= 0 && gridZ < MAZE_HEIGHT)
+    {
+        if (maze[gridZ][gridX] != 1)
+        {
+            targetX = nextX;
+            targetZ = nextZ;
+        }
+    }
+
+    glutPostRedisplay();
+}
+
+void specialKeyboard(int key, int x, int y)
+{
+    unsigned char mapped = 0;
+
+    switch (key)
+    {
+    case GLUT_KEY_UP:
+        mapped = 'w';
+        break;
+
+    case GLUT_KEY_DOWN:
+        mapped = 's';
+        break;
+
+    case GLUT_KEY_LEFT:
+        mapped = 'a';
+        break;
+
+    case GLUT_KEY_RIGHT:
+        mapped = 'd';
+        break;
+    }
+
+    if (mapped)
+    {
+        keyboard(mapped, x, y);
+    }
+}
+
+void reshape(int w, int h)
+{
+    glViewport(0, 0, w, h);
+    projectionMatrix = glm::perspective(PI / 4, (float)w / h, 0.1f, 100.0f);
 }
 
 void init()
@@ -1189,11 +1374,6 @@ void init()
     // Cache pentru shaderul de depth
     depthUniforms.mvpLoc = glGetUniformLocation(depth_shader_programme, "mvpMatrix");
     depthUniforms.modelLoc = glGetUniformLocation(depth_shader_programme, "modelMatrix");
-    depthUniforms.normalLoc = glGetUniformLocation(depth_shader_programme, "normalMatrix");
-    depthUniforms.colorLoc = glGetUniformLocation(depth_shader_programme, "objectColor");
-    depthUniforms.useLightLoc = glGetUniformLocation(depth_shader_programme, "useLighting");
-    depthUniforms.useTexLoc = glGetUniformLocation(depth_shader_programme, "useTexture");
-
     depthUniforms.lightSpaceLoc = glGetUniformLocation(depth_shader_programme, "lightSpaceMatrix");
 
     glUseProgram(shader_programme);
@@ -1249,10 +1429,10 @@ void init()
         -1.0f, -1.0f, -1.0f
     };
 
-    glGenVertexArrays(1, &skyboxVAO);
-    glGenBuffers(1, &skyboxVBO);
-    glBindVertexArray(skyboxVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, skyboxVBO);
+    glGenVertexArrays(1, &skyboxVao);
+    glGenBuffers(1, &skyboxVbo);
+    glBindVertexArray(skyboxVao);
+    glBindBuffer(GL_ARRAY_BUFFER, skyboxVbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
@@ -1281,204 +1461,17 @@ void init()
     glShaderSource(fsSkybox, 1, &skyboxFragment_shader, NULL);
     glCompileShader(fsSkybox);
 
-    skyboxShaderProg = glCreateProgram();
-    glAttachShader(skyboxShaderProg, vsSkybox);
-    glAttachShader(skyboxShaderProg, fsSkybox);
-    glLinkProgram(skyboxShaderProg);
+    skybox_shader_programme = glCreateProgram();
+    glAttachShader(skybox_shader_programme, vsSkybox);
+    glAttachShader(skybox_shader_programme, fsSkybox);
+    glLinkProgram(skybox_shader_programme);
 
-    skyboxProjLoc = glGetUniformLocation(skyboxShaderProg, "projection");
-    skyboxViewLoc = glGetUniformLocation(skyboxShaderProg, "view");
-    skyboxTexLoc = glGetUniformLocation(skyboxShaderProg, "skybox");
+    skyboxProjLoc = glGetUniformLocation(skybox_shader_programme, "projection");
+    skyboxViewLoc = glGetUniformLocation(skybox_shader_programme, "view");
+    skyboxTexLoc = glGetUniformLocation(skybox_shader_programme, "skybox");
 
-    glUseProgram(skyboxShaderProg);
+    glUseProgram(skybox_shader_programme);
     glUniform1i(skyboxTexLoc, 0);
-}
-
-void reshape(int w, int h)
-{
-    glViewport(0, 0, w, h);
-    projectionMatrix = glm::perspective(PI / 4, (float)w / h, 0.1f, 100.0f);
-}
-
-void keyboard(unsigned char key, int x, int y)
-{
-
-    if (key == 'r' || key == 'R')
-    {
-        restartGame();
-        glutPostRedisplay();
-        return;
-    }
-
-    if (isGameOver || isGameWon)
-    {
-        return;
-    }
-
-    float nextX = targetX;
-    float nextZ = targetZ;
-
-	// Rotunjim la unghiurile pentru a evita problemele de interpolare cand trecem de la +PI la -PI sau invers
-    float finalCamAngle = cameraAngle + cameraOrbit;
-    float screenUpAngle = finalCamAngle + PI;
-    float step = PI / 2.0f;
-    float snappedUp = round(screenUpAngle / step) * step;
-
-    switch (key) 
-    {
-        // Fullscreen
-    case 'f':
-    case 'F':
-        glutFullScreenToggle();
-        printf("Fullscreen mode activated!\n");
-        return;
-
-        // Pentru testare
-    case 'k':
-    case 'K':
-        printf("Cheat code activated!\n");
-        for (int r = 0; r < MAZE_HEIGHT; r++)
-        {
-            for (int c = 0; c < MAZE_WIDTH; c++)
-            {
-                pellets[r][c] = false;
-            }
-        }
-
-        pellets[9][9] = true;
-        pellets[8][9] = true;
-        pellets[7][9] = true;
-        return;
-        
-        // Toggle pentru glow
-    case 'g':
-    case 'G':
-        enableGlow = !enableGlow;
-        printf("Glow effect: %s\n", enableGlow ? "ON" : "OFF");
-        glutPostRedisplay();
-        return;
-
-		// Toggle pentru umbre
-    case 'm':
-    case 'M':
-        enableShadows = !enableShadows;
-        printf("Shadows: %s\n", enableShadows ? "ON" : "OFF");
-        glutPostRedisplay();
-        return;
-
-		// Toggle pentru normal mapping
-    case 'n':
-    case 'N':
-        enableNormalMapping = !enableNormalMapping;
-        printf("Normal mapping: %s\n", enableNormalMapping ? "ON" : "OFF");
-        glutPostRedisplay();
-        return;
-
-        // Pentru a si d nu se misca lateral, ci sa se intoarca la 90 de grade stanga/dreapta,
-        // nu este nevoie de determinarea coliziunii
-    case 'a':
-    case 'A':
-		targetAngle += PI / 2.0f; // Intoarcem 90 de grade stanga
-
-        if (targetAngle > PI)
-        {
-            targetAngle -= 2.0f * PI;
-        }
-        break;
-
-    case 'd':
-    case 'D':
-		targetAngle -= PI / 2.0f; // Intoarcem 90 de grade dreapta
-        
-        if (targetAngle < -PI)
-        {
-            targetAngle += 2.0f * PI;
-        }
-        break;
-
-    case 'w':
-    case 'W':
-        nextX += sin(targetAngle);
-        nextZ += cos(targetAngle); // Mergem inainte
-        break;
-
-    case 's':
-    case 'S':
-        nextX -= sin(targetAngle);
-		nextZ -= cos(targetAngle); // Mergi inapoi
-        break;
-
-    case 27:
-        exit(0); // ESC key
-    }
-
-    if (key == 'w' || key == 's' || key == 'a' || key == 'd' ||
-        key == 'W' || key == 'S' || key == 'A' || key == 'D')
-    {
-        cameraAngle += cameraOrbit;
-        cameraOrbit = 0.0f;
-
-		// Asiguram ca unghiurile sunt mereu intre -PI si PI pentru a evita problemele de interpolare
-        if (cameraAngle > PI) cameraAngle -= 2.0f * PI;
-        if (cameraAngle < -PI) cameraAngle += 2.0f * PI;
-
-        cameraTarget = targetAngle + PI;
-
-        while (cameraTarget - cameraAngle > PI) cameraTarget -= 2.0f * PI;
-        while (cameraTarget - cameraAngle < -PI) cameraTarget += 2.0f * PI;
-    }
-
-    int gridX = (int)(nextX + 0.5f);
-    int gridZ = (int)(nextZ + 0.5f);
-
-    // Logica de teleportare: daca Pacman incearca sa iasa pe latura stanga sau dreapta 
-    // a labirintului prin tunel, il aducem pe partea cealalta
-    if (gridZ == 7 && (gridX < 0 || gridX >= MAZE_WIDTH))
-    {
-        targetX = nextX;
-        targetZ = nextZ;
-    }
-
-    // Daca nu e tunel, verificam coliziunea normala cu peretii
-    else if (gridX >= 0 && gridX < MAZE_WIDTH && gridZ >= 0 && gridZ < MAZE_HEIGHT)
-    {
-        if (maze[gridZ][gridX] != 1)
-        {
-            targetX = nextX;
-            targetZ = nextZ;
-        }
-    }
-
-    glutPostRedisplay();
-}
-
-void specialKeyboard(int key, int x, int y)
-{
-    unsigned char mapped = 0;
-
-    switch (key) 
-    {
-    case GLUT_KEY_UP:
-        mapped = 'w';
-        break;
-
-    case GLUT_KEY_DOWN:
-        mapped = 's';
-        break;
-
-    case GLUT_KEY_LEFT:
-        mapped = 'a';
-        break;
-
-    case GLUT_KEY_RIGHT:
-        mapped = 'd';
-        break;
-    }
-
-    if (mapped)
-    {
-        keyboard(mapped, x, y);
-    }
 }
 
 int main(int argc, char** argv)
