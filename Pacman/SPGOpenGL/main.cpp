@@ -10,9 +10,6 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/constants.hpp>
 
-#include <queue>
-#include <cmath>
-
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #include "objloader.hpp"
