@@ -40,7 +40,7 @@ int sphereElementCount = (GLsizei)sphere.triangles.size() * sizeof(glm::ivec3);
 // Peretii
 CubeMesh wallCube;
 GLuint cubeVao, cubeVbo, cubeEbo;
-// Fiecare cub are 12 triunghiuri, deci 36 indici
+// * 3 pentru ca fiecare triungh are 3 indici
 int cubeElementCount = (GLsizei)wallCube.triangles.size() * 3;
 
 GLuint wallBoxVao, wallBoxVbo;
@@ -307,6 +307,7 @@ void buildStaticWallBuffer()
     for (const WallSegment& seg : wallSegments)
     {
         // Calculam coordonatele celor 8 colturile ale cubului de perete
+        // +-0.5 pentru a centra peretele in jurul pozitiei sale
         float x0 = seg.x - 0.5f;
         float x1 = seg.x + seg.width - 0.5f;
         float z0 = seg.z - 0.5f;
@@ -320,79 +321,66 @@ void buildStaticWallBuffer()
         float uD = seg.depth;
         float vH = wallH;
 
+        // Pentru face culling: ccw
         // Fata dinspre camera (Z+)
-        addVertex(x0, y0, z1, 0.0f, 0.0f, 0, 0, 1, 1, 0, 0);
-        addVertex(x1, y0, z1, uW, 0.0f, 0, 0, 1, 1, 0, 0);
-        addVertex(x1, y1, z1, uW, vH, 0, 0, 1, 1, 0, 0);
+        addVertex(x0, y0, z1,   0.0f, 0.0f, 0, 0, 1,    1, 0, 0);
+        addVertex(x1, y0, z1,   uW, 0.0f,   0, 0, 1,    1, 0, 0);
+        addVertex(x1, y1, z1,   uW, vH,     0, 0, 1,    1, 0, 0);
 
-        addVertex(x0, y0, z1, 0.0f, 0.0f, 0, 0, 1, 1, 0, 0);
-        addVertex(x1, y1, z1, uW, vH, 0, 0, 1, 1, 0, 0);
-        addVertex(x0, y1, z1, 0.0f, vH, 0, 0, 1, 1, 0, 0);
+        addVertex(x0, y0, z1,   0.0f, 0.0f, 0, 0, 1,    1, 0, 0);
+        addVertex(x1, y1, z1,   uW, vH,     0, 0, 1,    1, 0, 0);
+        addVertex(x0, y1, z1,   0.0f, vH,   0, 0, 1,    1, 0, 0);
 
         // Fata din spate (Z-)
-        addVertex(x1, y0, z0, 0.0f, 0.0f, 0, 0, -1, -1, 0, 0);
-        addVertex(x0, y0, z0, uW, 0.0f, 0, 0, -1, -1, 0, 0);
-        addVertex(x0, y1, z0, uW, vH, 0, 0, -1, -1, 0, 0);
+        addVertex(x1, y0, z0,   0.0f, 0.0f, 0, 0, -1,   -1, 0, 0);
+        addVertex(x0, y0, z0,   uW, 0.0f,   0, 0, -1,   -1, 0, 0);
+        addVertex(x0, y1, z0,   uW, vH,     0, 0, -1,   -1, 0, 0);
 
-        addVertex(x1, y0, z0, 0.0f, 0.0f, 0, 0, -1, -1, 0, 0);
-        addVertex(x0, y1, z0, uW, vH, 0, 0, -1, -1, 0, 0);
-        addVertex(x1, y1, z0, 0.0f, vH, 0, 0, -1, -1, 0, 0);
+        addVertex(x1, y0, z0,   0.0f, 0.0f, 0, 0, -1,   -1, 0, 0);
+        addVertex(x0, y1, z0,   uW, vH,     0, 0, -1,   -1, 0, 0);
+        addVertex(x1, y1, z0,   0.0f, vH,   0, 0, -1,   -1, 0, 0);
 
         // Fata din stanga (X-)
-        addVertex(x0, y0, z0, 0.0f, 0.0f, -1, 0, 0, 0, 0, 1);
-        addVertex(x0, y0, z1, uD, 0.0f, -1, 0, 0, 0, 0, 1);
-        addVertex(x0, y1, z1, uD, vH, -1, 0, 0, 0, 0, 1);
+        addVertex(x0, y0, z0,   0.0f, 0.0f, -1, 0, 0,   0, 0, 1);
+        addVertex(x0, y0, z1,   uD, 0.0f,   -1, 0, 0,   0, 0, 1);
+        addVertex(x0, y1, z1,   uD, vH,     -1, 0, 0,   0, 0, 1);
 
-        addVertex(x0, y0, z0, 0.0f, 0.0f, -1, 0, 0, 0, 0, 1);
-        addVertex(x0, y1, z1, uD, vH, -1, 0, 0, 0, 0, 1);
-        addVertex(x0, y1, z0, 0.0f, vH, -1, 0, 0, 0, 0, 1);
+        addVertex(x0, y0, z0,   0.0f, 0.0f, -1, 0, 0,   0, 0, 1);
+        addVertex(x0, y1, z1,   uD, vH,     -1, 0, 0,   0, 0, 1);
+        addVertex(x0, y1, z0,   0.0f, vH,   -1, 0, 0,   0, 0, 1);
 
         // Fata din dreapta (X+)
-        addVertex(x1, y0, z1, 0.0f, 0.0f, 1, 0, 0, 0, 0, -1);
-        addVertex(x1, y0, z0, uD, 0.0f, 1, 0, 0, 0, 0, -1);
-        addVertex(x1, y1, z0, uD, vH, 1, 0, 0, 0, 0, -1);
+        addVertex(x1, y0, z1,   0.0f, 0.0f, 1, 0, 0,    0, 0, -1);
+        addVertex(x1, y0, z0,   uD, 0.0f,   1, 0, 0,    0, 0, -1);
+        addVertex(x1, y1, z0,   uD, vH,     1, 0, 0,    0, 0, -1);
 
-        addVertex(x1, y0, z1, 0.0f, 0.0f, 1, 0, 0, 0, 0, -1);
-        addVertex(x1, y1, z0, uD, vH, 1, 0, 0, 0, 0, -1);
-        addVertex(x1, y1, z1, 0.0f, vH, 1, 0, 0, 0, 0, -1);
+        addVertex(x1, y0, z1,   0.0f, 0.0f, 1, 0, 0,    0, 0, -1);
+        addVertex(x1, y1, z0,   uD, vH,     1, 0, 0,    0, 0, -1);
+        addVertex(x1, y1, z1,   0.0f, vH,   1, 0, 0,    0, 0, -1);
 
         // Fata de sus (Y+)
-        addVertex(x0, y1, z1, 0.0f, uD, 0, 1, 0, 1, 0, 0);
-        addVertex(x1, y1, z1, uW, uD, 0, 1, 0, 1, 0, 0);
-        addVertex(x1, y1, z0, uW, 0.0f, 0, 1, 0, 1, 0, 0);
+        addVertex(x0, y1, z1,   0.0f, uD,   0, 1, 0,    1, 0, 0);
+        addVertex(x1, y1, z1,   uW, uD,     0, 1, 0,    1, 0, 0);
+        addVertex(x1, y1, z0,   uW, 0.0f,   0, 1, 0,    1, 0, 0);
 
-        addVertex(x0, y1, z1, 0.0f, uD, 0, 1, 0, 1, 0, 0);
-        addVertex(x1, y1, z0, uW, 0.0f, 0, 1, 0, 1, 0, 0);
-        addVertex(x0, y1, z0, 0.0f, 0.0f, 0, 1, 0, 1, 0, 0);
-
-        // Fata de jos (Y-)
-        addVertex(x0, y0, z0, 0.0f, uD, 0, -1, 0, 1, 0, 0);
-        addVertex(x1, y0, z0, uW, uD, 0, -1, 0, 1, 0, 0);
-        addVertex(x1, y0, z1, uW, 0.0f, 0, -1, 0, 1, 0, 0);
-
-        addVertex(x0, y0, z0, 0.0f, uD, 0, -1, 0, 1, 0, 0);
-        addVertex(x1, y0, z1, uW, 0.0f, 0, -1, 0, 1, 0, 0);
-        addVertex(x0, y0, z1, 0.0f, 0.0f, 0, -1, 0, 1, 0, 0);
+        addVertex(x0, y1, z1,   0.0f, uD,   0, 1, 0,    1, 0, 0);
+        addVertex(x1, y1, z0,   uW, 0.0f,   0, 1, 0,    1, 0, 0);
+        addVertex(x0, y1, z0,   0.0f, 0.0f, 0, 1, 0,    1, 0, 0);
     }
 
-    // Dupa ce am generat toti vertexii pentru toate segmentele, ii incarcam o data in buffer
     glBindVertexArray(wallBoxVao);
     glBindBuffer(GL_ARRAY_BUFFER, wallBoxVbo);
     glBufferData(GL_ARRAY_BUFFER, allWallVertices.size() * sizeof(Vertex), allWallVertices.data(), GL_STATIC_DRAW);
 
-    // Pozitiile
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
 
-    // UV
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, texCoord));
 
-    // Normalele
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
 
-    // Tangent
     glEnableVertexAttribArray(3);
     glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, tangent));
 
