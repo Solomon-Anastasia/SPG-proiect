@@ -389,6 +389,9 @@ void buildStaticWallBuffer()
 
 void initPellets()
 {
+    // Pentru random mereu diferit
+    srand(time(0));
+
     for (int r = 0; r < MAZE_HEIGHT; r++)
     {
         for (int c = 0; c < MAZE_WIDTH; c++)
@@ -406,27 +409,27 @@ void initPellets()
     pellets[1][1] = false;
 }
 
-void loadWallTexture()
+GLuint loadTexture(const char* path)
 {
-    glGenTextures(1, &wallTexture);
-    glBindTexture(GL_TEXTURE_2D, wallTexture);
+    GLuint textureID;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_2D, textureID);
 
     stbi_set_flip_vertically_on_load(true);
 
     int width, height, nrChannels;
-    unsigned char* data = stbi_load("img/Wall.jpg", &width, &height, &nrChannels, 0);
+    unsigned char* data = stbi_load(path, &width, &height, &nrChannels, 0);
 
     if (data)
     {
         GLenum format = (nrChannels == 4) ? GL_RGBA : GL_RGB;
         glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
-
         glGenerateMipmap(GL_TEXTURE_2D);
-        printf("Wall texture loaded: %dx%d, %d channels\n", width, height, nrChannels);
+        printf("Texture loaded: %s (%dx%d, %d channels)\n", path, width, height, nrChannels);
     }
     else
     {
-        printf("ERROR: Failed to load texture!\n");
+        printf("ERROR: Failed to load texture: %s\n", path);
     }
 
     stbi_image_free(data);
@@ -436,26 +439,8 @@ void loadWallTexture()
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-}
 
-void loadNormalMap()
-{
-    glGenTextures(1, &wallNormalMap);
-    glBindTexture(GL_TEXTURE_2D, wallNormalMap);
-    stbi_set_flip_vertically_on_load(true);
-
-    int width, height, nrChannels;
-    unsigned char* data = stbi_load("img/WallNormal.png", &width, &height, &nrChannels, 0);
-    if (data) {
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
-        glGenerateMipmap(GL_TEXTURE_2D);
-    }
-    stbi_image_free(data);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    return textureID;
 }
 
 GLuint loadCubemap(std::vector<std::string> faces)
@@ -1257,8 +1242,8 @@ void init()
     buildWallSegments();
     buildStaticWallBuffer();
 
-    loadWallTexture();
-    loadNormalMap();
+    wallTexture = loadTexture("img/Wall.jpg");
+    wallNormalMap = loadTexture("img/WallNormal.png");
 
     printf("Wall draw calls reduced from %d worst case to %d total\n", MAZE_HEIGHT * MAZE_WIDTH, (int)wallSegments.size());
 
