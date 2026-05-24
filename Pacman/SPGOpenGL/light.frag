@@ -77,7 +77,7 @@ void main()
 {
     vec3 texColor = texture(wallTexture, TexCoord).rgb;
     
-    vec3 wallTint = vec3(0.4, 0.4, 0.65); // Brighter base color
+    vec3 wallTint = vec3(0.6, 0.6, 0.85);
 
     vec3 baseColor = useTexture ? (texColor * wallTint) : objectColor;
 

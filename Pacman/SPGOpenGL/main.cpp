@@ -696,7 +696,7 @@ void renderScene(const ShaderUniforms& u)
 
     // Podeaua
     if (u.useTexLoc != -1) glUniform1i(u.useTexLoc, 0);
-    if (u.colorLoc != -1) glUniform3f(u.colorLoc, 0.08f, 0.08f, 0.18f);
+    if (u.colorLoc != -1) glUniform3f(u.colorLoc, 0.25f, 0.25f, 0.4f);
 
     glBindVertexArray(cubeVao);
     float floorCenterX = (MAZE_WIDTH - 1) / 2.0f;
