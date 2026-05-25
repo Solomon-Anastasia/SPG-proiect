@@ -928,7 +928,7 @@ void display()
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     }
 
-    // Afisare text de Game Over
+	// Afisare text de Game Over / You Win
     if (isGameOver)
     {
         renderText2D(-0.15f, 0.1f, GLUT_BITMAP_TIMES_ROMAN_24, "GAME OVER", glm::vec3(1.0f, 0.0f, 0.0f));
@@ -936,7 +936,6 @@ void display()
     }
     else if (isGameWon)
     {
-        // Bright green text for the win
         renderText2D(-0.13f, 0.1f, GLUT_BITMAP_TIMES_ROMAN_24, "YOU WIN!", glm::vec3(0.0f, 1.0f, 0.0f));
         renderText2D(-0.24f, -0.05f, GLUT_BITMAP_HELVETICA_18, "Press 'R' to play again!", glm::vec3(1.0f, 1.0f, 1.0f));
     }
