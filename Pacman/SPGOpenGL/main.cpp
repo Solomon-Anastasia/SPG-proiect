@@ -105,6 +105,7 @@ int maze[MAZE_HEIGHT][MAZE_WIDTH] = {
 
 bool pellets[MAZE_HEIGHT][MAZE_WIDTH];
 
+
 // Pentru a stoca segmentele de perete intr-o singura zona de memorie
 struct Vertex
 {
