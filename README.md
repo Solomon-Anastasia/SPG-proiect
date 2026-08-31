@@ -2,7 +2,7 @@
 
 ![Pacman 3D Gameplay](img/Pacman.png)
 
-A 3D reimagining of the classic Pacman game, built from scratch using C++ and modern OpenGL. This project was developed as part of the "Graphic Processing Systems" course.
+A 3D reimagining of the classic Pacman game, built from scratch using C++ and modern OpenGL.
 
 The game retains the original mechanics: a maze, collectible coins, and ghosts to avoid, but introduces a 3D perspective with a dynamic follow-camera, advanced lighting, and several modern rendering techniques.
 
